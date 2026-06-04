@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <meta name="theme-color" content="#2199EF">
+    <title>Login | Studio Nogueira</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="login.css">
+    <link rel="icon" type="image/png" href="./assets/barber-icon.png">
+</head>
+
+<body>
+    <div class="login-container">
+        <div class="logo-area">
+            <img src="assets/studio-nogueira-index.jpg" alt="Logo">
+            <h1>Área da Barbearia</h1>
+            <p>Sistema Administrativo</p>
+        </div>
+
+        <form id="loginForm">
+            <div class="input-group">
+                <label>E-mail</label>
+                <div class="input-wrapper">
+                    <i class="fa-solid fa-envelope"></i>
+                    <input type="email" id="email" required placeholder="seu@email.com" autocomplete="email">
+                </div>
+            </div>
+
+            <div class="input-group">
+                <label>Senha</label>
+                <div class="input-wrapper">
+                    <i class="fa-solid fa-lock"></i>
+                    <input type="password" id="senha" required placeholder="••••••••" autocomplete="current-password">
+                </div>
+            </div>
+
+            <button type="submit" class="btn-login" id="btnLogin">
+                <i class="fa-solid fa-arrow-right-to-bracket"></i> Entrar
+            </button>
+
+            <div id="loginErro" class="error-msg"></div>
+        </form>
+
+        <div class="login-footer">
+            <p>© 2026 Studio Nogueira | SOFTCLICK by SoftPower</p>
+        </div>
+    </div>
+
+    <script type="module" src="login.js"></script>
+</body>
+
+</html>

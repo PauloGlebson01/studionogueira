@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=yes">
+    <meta name="theme-color" content="#2199EF">
+    <title>Agendar Horário | Studio Nogueira</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700&display=swap"
+        rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
+    <link rel="stylesheet" href="agendamento.css">
+    <link rel="icon" type="image/png" href="assets/barber-icon.png">
+</head>
+
+<body>
+    <div class="container">
+        <header class="profile">
+            <h1>✂️ Agende seu Horário</h1>
+            <p class="subtitle">Escolha os serviços, o barbeiro e o melhor horário para você.</p>
+        </header>
+
+        <form id="formAgendamento">
+            <div class="input-group">
+                <label for="nome"><i class="fa-solid fa-user"></i> Seu Nome Completo *</label>
+                <input type="text" id="nome" placeholder="Ex: João Silva" autocomplete="name" required>
+            </div>
+
+            <div class="input-group">
+                <label for="telefone"><i class="fa-brands fa-whatsapp"></i> WhatsApp para Contato *</label>
+                <input type="tel" id="telefone" placeholder="(83) 99999-9999" autocomplete="tel" required>
+                <small
+                    style="color: #2199EF; display: block; margin-top: 6px; font-size: 0.7rem; background: rgba(33, 153, 239, 0.1); padding: 6px 10px; border-radius: 10px;">
+                    <i class="fa-solid fa-robot"></i>
+                    <strong>💡 Dica:</strong> Se você já fez agendamento antes, seus dados (nome, e-mail e data de
+                    nascimento) serão <strong>preenchidos automaticamente</strong> ao digitar seu WhatsApp!
+                </small>
+            </div>
+
+            <div class="input-group">
+                <label for="email"><i class="fa-solid fa-envelope"></i> E-mail (Obrigatório)</label>
+                <input type="email" id="email" placeholder="seu@email.com">
+                <small style="color: #64748b; display: block; margin-top: 4px;">📧 Ao informar seu e-mail, você receberá a confirmação por e-mail e WhatsApp.</small>
+            </div>
+
+            <div class="input-group">
+                <label for="dataNascimento"><i class="fa-solid fa-cake-candles"></i> Data de Nascimento</label>
+                <div class="date-wrapper">
+                    <input type="date" id="dataNascimento">
+                </div>
+                <small style="color: #64748b; display: block; margin-top: 4px;">🎂 Informe sua data de nascimento para ganhar desconto no mês do seu aniversário!</small>
+            </div>
+
+            <!-- SEÇÃO DE MÚLTIPLOS SERVIÇOS (COM SERVIÇOS DO FIREBASE) -->
+            <div class="input-group">
+                <label><i class="fa-solid fa-list"></i> Serviços Desejados *</label>
+                <div id="servicosContainer" class="servicos-container">
+                    <div class="servico-item" data-index="0">
+                        <div class="servico-row">
+                            <select name="servico[]" class="servico-select" required>
+                                <option value="">Carregando serviços...</option>
+                            </select>
+                            <button type="button" class="btn-remover-servico" data-index="0" style="display: none;">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <button type="button" id="btnAdicionarServico" class="btn-add-servico">
+                    <i class="fa-solid fa-plus"></i> Adicionar outro serviço
+                </button>
+                <div class="total-servicos">
+                    <span>💰 Total: </span>
+                    <strong id="valorTotalServicos">R$ 0,00</strong>
+                </div>
+
+                <!-- Informações do Pacote com Desconto -->
+                <div id="infoPacote" style="display: none;" class="info-pacote">
+                    <div class="pacote-desconto-info">
+                        <div class="desconto-header">
+                            <i class="fa-solid fa-tag"></i>
+                            <span>Pacote Aplicado</span>
+                        </div>
+                        <div class="desconto-detalhes">
+                            <div class="pacote-nome-display">
+                                <strong id="pacoteNomeDisplay"></strong>
+                            </div>
+                            <div class="precos-container">
+                                <span class="preco-original-display" id="precoOriginalDisplay"></span>
+                                <span class="preco-desconto-display" id="precoDescontoDisplay"></span>
+                                <span class="desconto-badge-display" id="descontoBadgeDisplay"></span>
+                            </div>
+                            <div class="economia-display">
+                                <i class="fa-solid fa-circle-check"></i>
+                                Você economiza <strong id="economiaValorDisplay">R$ 0,00</strong>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Observação Geral -->
+            <div class="input-group">
+                <label for="observacaoGeral"><i class="fa-solid fa-note-sticky"></i> Observação (opcional)</label>
+                <textarea id="observacaoGeral" rows="3"
+                    placeholder="Alguma informação adicional? Ex: Trago foto de referência, tenho alergia a algum produto, horário preferencial..."></textarea>
+            </div>
+
+            <div class="input-group">
+                <label for="profissional"><i class="fa-solid fa-user-nurse"></i> Escolha o Barbeiro</label>
+                <select id="profissional" required>
+                    <option value="">Carregando especialistas...</option>
+                </select>
+            </div>
+
+            <div class="input-group">
+                <label for="data"><i class="fa-solid fa-calendar-day"></i> Data do Atendimento</label>
+                <div class="date-wrapper">
+                    <input type="date" id="data" required>
+                </div>
+            </div>
+
+            <div class="input-group">
+                <label><i class="fa-solid fa-clock"></i> Horários Disponíveis</label>
+                <div id="horarios" class="horarios">
+                    <div class="aviso-campos">
+                        <i class="fa-regular fa-calendar-circle-plus"></i>
+                        <p>Preencha todos os campos para ver os horários disponíveis</p>
+                    </div>
+                </div>
+                <input type="hidden" id="horario" required>
+            </div>
+
+            <button type="submit" class="btn-primary">
+                <i class="fa-solid fa-check-circle"></i> Confirmar Agendamento
+            </button>
+        </form>
+
+        <div id="loading" class="loading" style="display:none;">
+            <i class="fa-solid fa-spinner fa-spin"></i> Processando agendamento...
+        </div>
+        <div id="mensagem"></div>
+        <footer>🔒 Agendamento seguro · Horários atualizados em tempo real</footer>
+    </div>
+
+    <script type="module" src="agendamento.js"></script>
+</body>
+
+</html>
