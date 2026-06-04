@@ -52,7 +52,18 @@ const servicosContainer = document.getElementById("servicosContainer");
 const btnAdicionarServico = document.getElementById("btnAdicionarServico");
 const valorTotalServicosSpan = document.getElementById("valorTotalServicos");
 
-const horariosDisponiveis = ["09:00", "10:00", "11:00", "14:00", "15:00", "16:00", "17:00", "18:00"];
+// ==================== HORÁRIOS POR DIA DA SEMANA ====================
+// Horários de SEGUNDA a QUARTA (conforme imagem: 08:20, 09:00, 09:40...)
+const horariosSegundaQuarta = [
+    "08:20", "09:00", "09:40", "10:20", "11:00", "11:40",
+    "14:00", "14:40", "15:20", "16:00", "16:40", "17:20", "18:00"
+];
+
+// Horários de QUINTA a SÁBADO (conforme imagem: 08:00, 08:40, 09:20...)
+const horariosQuintaSabado = [
+    "08:00", "08:40", "09:20", "10:00", "10:40", "11:20",
+    "14:00", "14:40", "15:20", "16:00", "16:40", "17:20", "18:00", "18:40"
+];
 
 let camposPreenchidos = { nome: false, telefone: false, profissional: false, data: false, servicos: false };
 let usuarioAutenticado = false;
@@ -86,7 +97,6 @@ async function buscarClientePorTelefone(telefone) {
         
         const clientesRef = collection(db, "clientes");
         
-        // Buscar por telefoneNumerico (campo que salvamos)
         const qNumerico = query(clientesRef, where("telefoneNumerico", "==", telefoneNumerico));
         const snapshotNumerico = await getDocs(qNumerico);
         
@@ -97,7 +107,6 @@ async function buscarClientePorTelefone(telefone) {
             return cliente;
         }
         
-        // Buscar por telefone normal
         const qTelefone = query(clientesRef, where("telefone", "==", telefone));
         const snapshotTelefone = await getDocs(qTelefone);
         
@@ -126,7 +135,6 @@ async function autoPreencherDadosCliente() {
     
     console.log(`🔍 Verificando cliente com telefone: ${telefoneNumerico}`);
     
-    // Mostrar indicador de carregamento
     const telefoneLabel = document.querySelector('label[for="telefone"]');
     if (telefoneLabel) {
         const existingLoader = document.getElementById('clienteLoader');
@@ -143,14 +151,12 @@ async function autoPreencherDadosCliente() {
     try {
         const cliente = await buscarClientePorTelefone(telefone);
         
-        // Remover loader
         const loader = document.getElementById('clienteLoader');
         if (loader) loader.remove();
         
         if (cliente) {
             console.log("🎯 Cliente encontrado! Preenchendo dados automaticamente:", cliente.nome);
             
-            // Preencher dados do cliente automaticamente
             if (nomeInput && cliente.nome) {
                 nomeInput.value = cliente.nome;
                 nomeInput.style.borderColor = "#10b981";
@@ -175,8 +181,7 @@ async function autoPreencherDadosCliente() {
                 }, 2000);
             }
             
-            // Exibir mensagem de boas-vindas
-            const clienteNome = cliente.nome.split(' ')[0]; // Primeiro nome
+            const clienteNome = cliente.nome.split(' ')[0];
             const totalAgendamentos = cliente.totalAgendamentos || 0;
             
             if (totalAgendamentos > 0) {
@@ -185,21 +190,18 @@ async function autoPreencherDadosCliente() {
                 mostrarMensagem(`✨ Olá ${clienteNome}! Seus dados foram carregados.`, "sucesso");
             }
             
-            // Verificar se é aniversário do cliente
             if (cliente.nascimento) {
                 const hoje = new Date();
                 const nascimento = new Date(cliente.nascimento);
                 if (nascimento.getMonth() === hoje.getMonth() && nascimento.getDate() === hoje.getDate()) {
                     mostrarMensagem(`🎂🎉 FELIZ ANIVERSÁRIO, ${clienteNome.toUpperCase()}! 🎉🎂 Você ganha 10% de desconto hoje!`, "sucesso");
                     
-                    // Aplicar desconto de aniversário se tiver serviço selecionado
                     setTimeout(() => {
                         aplicarDescontoAniversario();
                     }, 500);
                 }
             }
             
-            // Forçar validação de campos
             verificarCamposPreenchidos();
             
         } else {
@@ -216,7 +218,6 @@ async function autoPreencherDadosCliente() {
 // ==================== FUNÇÃO PARA APLICAR DESCONTO DE ANIVERSÁRIO ====================
 function aplicarDescontoAniversario() {
     if (!pacoteAtual) {
-        // Calcular total atual
         let totalAtual = 0;
         document.querySelectorAll('.servico-select').forEach(select => {
             const selectedOption = select.options[select.selectedIndex];
@@ -228,7 +229,6 @@ function aplicarDescontoAniversario() {
             const desconto = totalAtual * 0.10;
             const novoTotal = totalAtual - desconto;
             
-            // Mostrar informação do desconto
             if (valorTotalServicosSpan) {
                 valorTotalServicosSpan.innerHTML = `${formatarMoeda(novoTotal)} <span style="font-size: 0.65rem; color: #10b981; margin-left: 8px;">(10% OFF - Aniversário!)</span>`;
                 valorTotalServicosSpan.style.color = '#10b981';
@@ -282,7 +282,6 @@ async function mostrarHistoricoCliente() {
     
     if (agendamentos.length === 0) return;
     
-    // Criar elemento de histórico
     let historicoDiv = document.getElementById('historicoCliente');
     if (!historicoDiv) {
         historicoDiv = document.createElement('div');
@@ -844,7 +843,6 @@ async function salvarOuAtualizarCliente(dadosCliente) {
         
         const clientesRef = collection(db, "clientes");
         
-        // Buscar por telefone
         let clienteExistente = null;
         const qTelefone = query(clientesRef, where("telefoneNumerico", "==", telefoneNumerico));
         const snapshotTelefone = await getDocs(qTelefone);
@@ -945,10 +943,51 @@ function getNomeDiaSemana(dataStr) {
     return dias[getDiaSemana(dataStr)];
 }
 
+// Função para obter horários baseado no dia da semana
+function getHorariosPorDia(dataStr) {
+    const diaSemana = getDiaSemana(dataStr);
+    
+    // Segunda (1), Terça (2), Quarta (3) -> horários Segunda-Quarta
+    if (diaSemana >= 1 && diaSemana <= 3) {
+        return { 
+            horarios: horariosSegundaQuarta,
+            descricao: "Segunda à Quarta"
+        };
+    }
+    // Quinta (4), Sexta (5), Sábado (6) -> horários Quinta-Sábado
+    else if (diaSemana >= 4 && diaSemana <= 6) {
+        return { 
+            horarios: horariosQuintaSabado,
+            descricao: "Quinta à Sábado"
+        };
+    }
+    // Domingo (0) - não atende
+    else {
+        return { 
+            horarios: [],
+            descricao: "Domingo"
+        };
+    }
+}
+
 function getInfoAtendimentoPorDia(dataStr) {
     const diaSemana = getDiaSemana(dataStr);
-    if (diaSemana === 0) return { temAtendimento: false, mensagem: "Não atendemos aos domingos." };
-    return { temAtendimento: true, horarios: horariosDisponiveis, mensagem: "Atendimento Presencial" };
+    
+    // Domingo - não atende
+    if (diaSemana === 0) {
+        return { 
+            temAtendimento: false, 
+            mensagem: "Não atendemos aos domingos." 
+        };
+    }
+    
+    const horariosInfo = getHorariosPorDia(dataStr);
+    
+    return { 
+        temAtendimento: true, 
+        horarios: horariosInfo.horarios,
+        mensagem: `Horários - ${horariosInfo.descricao}`
+    };
 }
 
 function verificarCamposPreenchidos() {
@@ -1056,7 +1095,7 @@ async function atualizarHorarios() {
             }
         });
         
-        renderizarHorarios(Array.from(ocupados));
+        renderizarHorarios(Array.from(ocupados), infoAtendimento);
         
     } catch (error) {
         console.error("Erro ao buscar horários:", error);
@@ -1064,16 +1103,25 @@ async function atualizarHorarios() {
     }
 }
 
-function renderizarHorarios(ocupados = []) {
+function renderizarHorarios(ocupados = [], infoAtendimento) {
     const nomeDia = getNomeDiaSemana(dataInput.value);
+    const horariosDoDia = infoAtendimento.horarios;
+    
     horariosDiv.innerHTML = '';
     const infoHeader = document.createElement('div');
     infoHeader.style.cssText = `background:#e8f4fd;padding:14px 16px;border-radius:16px;margin-bottom:20px;text-align:center;border-left:4px solid #2199EF;`;
-    infoHeader.innerHTML = `<div><h3 style="margin:0;color:#2199EF;">Horários Disponíveis - ${nomeDia}</h3></div>`;
+    infoHeader.innerHTML = `
+        <div>
+            <h3 style="margin:0;color:#2199EF;">Horários Disponíveis - ${nomeDia}</h3>
+            <p style="margin:5px 0 0;font-size:0.75rem;color:#475569;">${infoAtendimento.mensagem}</p>
+        </div>
+    `;
     horariosDiv.appendChild(infoHeader);
+    
     const containerBotoes = document.createElement('div');
     containerBotoes.className = 'botoes-horarios';
-    horariosDisponiveis.forEach(hora => {
+    
+    horariosDoDia.forEach(hora => {
         const isOcupado = ocupados.includes(hora);
         const btn = document.createElement("button");
         btn.type = "button";
@@ -1300,20 +1348,17 @@ if (telefoneInput) {
         e.target.value = formatarTelefone(e.target.value);
         verificarCamposPreenchidos();
         
-        // Adicionar debounce para não buscar a cada tecla
         clearTimeout(window.telefoneDebounce);
         window.telefoneDebounce = setTimeout(() => {
             autoPreencherDadosCliente();
         }, 800);
     });
     
-    // Quando sair do campo telefone, buscar imediatamente
     telefoneInput.addEventListener('blur', () => {
         autoPreencherDadosCliente();
         mostrarHistoricoCliente();
     });
     
-    // Quando limpar o telefone, remover histórico
     telefoneInput.addEventListener('focus', () => {
         if (!telefoneInput.value) {
             removerHistoricoCliente();
@@ -1330,4 +1375,6 @@ configurarDataMinima();
 configurarEventosServicos();
 calcularValorTotal();
 
-console.log("✅ agendamento.js carregado com sucesso - Com AUTO PREENCHIMENTO de dados do cliente!");
+console.log("✅ agendamento.js carregado com sucesso!");
+console.log("📋 Horários Segunda à Quarta:", horariosSegundaQuarta);
+console.log("📋 Horários Quinta à Sábado:", horariosQuintaSabado);
