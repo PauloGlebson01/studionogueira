@@ -159,6 +159,33 @@ input::placeholder {
     background: linear-gradient(135deg, #4b5563 0%, #374151 100%);
 }
 
+/* Estilo para link de esqueceu senha */
+.forgot-password {
+    text-align: center;
+    margin-top: 1rem;
+}
+
+.forgot-password a,
+.back-to-login a {
+    color: #94a3b8;
+    font-size: 0.8rem;
+    text-decoration: none;
+    transition: color 0.3s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.forgot-password a:hover,
+.back-to-login a:hover {
+    color: #2199EF;
+}
+
+.back-to-login {
+    text-align: center;
+    margin-top: 1.5rem;
+}
+
 .error-msg {
     display: none;
     color: #ef4444;
@@ -171,6 +198,12 @@ input::placeholder {
     border: 1px solid rgba(239, 68, 68, 0.3);
     animation: shake 0.5s ease;
     white-space: pre-line;
+}
+
+.error-msg.sucesso {
+    background: rgba(16, 185, 129, 0.1);
+    color: #10b981;
+    border-color: rgba(16, 185, 129, 0.3);
 }
 
 .login-footer {
