@@ -4,8 +4,7 @@ import {
     signInWithEmailAndPassword,
     signOut,
     onAuthStateChanged,
-    sendPasswordResetEmail,
-    fetchSignInMethodsForEmail
+    sendPasswordResetEmail
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { 
     getFirestore, 
@@ -15,7 +14,8 @@ import {
     query,
     where,
     getDocs,
-    setDoc
+    setDoc,
+    updateDoc
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 // BANCO DE DADOS
@@ -35,251 +35,218 @@ const db = getFirestore(app);
 
 let isAdminLogout = false;
 
-// CONFIGURAÇÃO DO FORMSUBMIT
-// IMPORTANTE: Substitua este e-mail pelo seu e-mail real onde deseja receber as solicitações
-const FORM_SUBMIT_EMAIL = "softpowersolucoesdigitais@gmail.com"; // E-mail para receber as solicitações
+// CONFIGURAÇÃO DO FORMSUBMIT - URL FIXA
+const FORM_SUBMIT_URL = 'https://formsubmit.co/ajax/softpowersolucoesdigitais@gmail.com';
 
-// Verificar se o sistema já foi configurado
-async function verificarConfiguracaoSistema() {
-    try {
-        const configRef = doc(db, "configuracoes", "sistema");
-        const configDoc = await getDoc(configRef);
-        
-        if (!configDoc.exists() || configDoc.data().configurado !== true) {
-            console.log("⚠️ Sistema não configurado. Redirecionando para configuração inicial...");
-            window.location.href = 'configuracao-inicial.html';
-            return false;
-        }
-        return true;
-    } catch (error) {
-        console.error("Erro ao verificar configuração:", error);
-        return true;
+// DADOS PADRÃO (fallback)
+const ADMIN_PADRAO = {
+    email: "softpowersolucoesdigitais@gmail.com",
+    senha: "admin123"
+};
+
+// Função para normalizar e-mail
+function normalizarEmail(email) {
+    if (!email) return '';
+    let normalized = email.toLowerCase().trim();
+    const [localPart, domain] = normalized.split('@');
+    if (domain === 'gmail.com' || domain === 'googlemail.com') {
+        normalized = localPart.replace(/\./g, '') + '@' + domain;
     }
+    return normalized;
 }
 
-// Função para buscar a senha do administrador no Firebase (várias fontes)
-async function buscarSenhaAdmin(email) {
+// FUNÇÃO PARA SALVAR SENHA USANDO SESSIONSTORAGE (FALLBACK)
+function salvarSenhaLocal(email, senha) {
     try {
-        console.log("🔍 Buscando e-mail:", email);
-        
-        // 1. Buscar na coleção de configurações
-        const configRef = doc(db, "configuracoes", "sistema");
-        const configDoc = await getDoc(configRef);
-        
-        if (configDoc.exists()) {
-            const configData = configDoc.data();
-            console.log("📦 Configuração encontrada:", configData.emailAdmin);
-            
-            // Verificar se o e-mail corresponde ao admin configurado
-            if (configData.emailAdmin && configData.emailAdmin.toLowerCase() === email.toLowerCase()) {
-                // Se tiver a senha salva, retorna ela
-                if (configData.senhaAdmin) {
-                    return {
-                        encontrado: true,
-                        senha: configData.senhaAdmin,
-                        nomeBarbearia: configData.nomeBarbearia || "Studio Nogueira",
-                        metodo: "configuracoes"
-                    };
-                }
-            }
-        }
-        
-        // 2. Buscar na coleção de usuários
-        const usuariosRef = collection(db, "usuarios");
-        const q = query(usuariosRef, where("email", "==", email));
-        const querySnapshot = await getDocs(q);
-        
-        if (!querySnapshot.empty) {
-            const userDoc = querySnapshot.docs[0];
-            const userData = userDoc.data();
-            console.log("👤 Usuário encontrado na coleção usuarios");
-            
-            if (userData.senha) {
-                return {
-                    encontrado: true,
-                    senha: userData.senha,
-                    nomeBarbearia: userData.nomeBarbearia || "Studio Nogueira",
-                    metodo: "usuarios"
-                };
-            }
-        }
-        
-        // 3. Buscar na coleção de admins
-        const adminsRef = collection(db, "admins");
-        const qAdmin = query(adminsRef, where("email", "==", email));
-        const adminSnapshot = await getDocs(qAdmin);
-        
-        if (!adminSnapshot.empty) {
-            const adminDoc = adminSnapshot.docs[0];
-            const adminData = adminDoc.data();
-            console.log("👑 Admin encontrado na coleção admins");
-            
-            if (adminData.senha) {
-                return {
-                    encontrado: true,
-                    senha: adminData.senha,
-                    nomeBarbearia: adminData.nomeBarbearia || "Studio Nogueira",
-                    metodo: "admins"
-                };
-            }
-        }
-        
-        // 4. Verificar se o e-mail existe no Firebase Authentication
-        try {
-            const signInMethods = await fetchSignInMethodsForEmail(auth, email);
-            if (signInMethods && signInMethods.length > 0) {
-                console.log("✅ E-mail encontrado no Firebase Authentication");
-                
-                // E-mail existe no Auth, mas não temos a senha armazenada
-                // Neste caso, vamos usar o sendPasswordResetEmail
-                return {
-                    encontrado: true,
-                    usarResetLink: true,
-                    email: email,
-                    nomeBarbearia: "Studio Nogueira",
-                    metodo: "authentication"
-                };
-            }
-        } catch (authError) {
-            console.log("E-mail não encontrado no Authentication:", authError.message);
-        }
-        
-        console.log("❌ E-mail não encontrado em nenhuma fonte");
-        return { encontrado: false };
-        
-    } catch (error) {
-        console.error("Erro ao buscar senha do admin:", error);
-        return { encontrado: false, erro: error.message };
-    }
-}
-
-// Função para cadastrar/atualizar o admin no sistema
-async function cadastrarAdminSistema(email, senha, nomeBarbearia = "Studio Nogueira") {
-    try {
-        // Salvar na coleção de configurações
-        const configRef = doc(db, "configuracoes", "sistema");
-        await setDoc(configRef, {
-            emailAdmin: email,
-            senhaAdmin: senha,
-            nomeBarbearia: nomeBarbearia,
-            configurado: true,
-            atualizadoEm: new Date()
-        }, { merge: true });
-        
-        // Salvar na coleção de admins
-        const adminRef = doc(db, "admins", email.replace(/[^a-zA-Z0-9]/g, "_"));
-        await setDoc(adminRef, {
-            email: email,
-            senha: senha,
-            nomeBarbearia: nomeBarbearia,
-            criadoEm: new Date()
-        });
-        
-        console.log("✅ Admin cadastrado com sucesso!");
+        const senhasSalvas = JSON.parse(sessionStorage.getItem('admin_senhas') || '{}');
+        const emailKey = normalizarEmail(email);
+        senhasSalvas[emailKey] = senha;
+        sessionStorage.setItem('admin_senhas', JSON.stringify(senhasSalvas));
+        localStorage.setItem(`admin_senha_${emailKey}`, senha);
+        console.log("✅ Senha salva no armazenamento local!");
         return true;
     } catch (error) {
-        console.error("Erro ao cadastrar admin:", error);
+        console.error("Erro ao salvar local:", error);
         return false;
     }
 }
 
-// Função para enviar e-mail via FormSubmit
-async function enviarSenhaPorEmail(emailDestino, dadosAdmin) {
-    const formData = new FormData();
-    formData.append("email", FORM_SUBMIT_EMAIL);
-    formData.append("subject", `Recuperação de Senha - ${dadosAdmin.nomeBarbearia}`);
-    formData.append("_captcha", "false");
-    formData.append("_template", "table");
-    formData.append("_replyto", emailDestino);
-    
-    // Conteúdo do e-mail
-    const conteudoEmail = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <style>
-                body { font-family: Arial, sans-serif; }
-                .container { max-width: 600px; margin: 0 auto; padding: 20px; background: #f4f4f4; }
-                .header { background: linear-gradient(135deg, #2199EF, #1a7fcc); padding: 20px; text-align: center; border-radius: 10px 10px 0 0; }
-                .header h2 { color: white; margin: 0; }
-                .header p { color: white; margin: 5px 0 0; }
-                .content { background: white; padding: 20px; border-radius: 0 0 10px 10px; }
-                .info-box { background: #f0f2f5; padding: 15px; border-radius: 8px; margin: 20px 0; }
-                .senha-box { background: #2199EF; color: white; padding: 10px 20px; border-radius: 5px; font-family: monospace; font-size: 18px; display: inline-block; }
-                .footer { text-align: center; margin-top: 20px; font-size: 12px; color: #777; }
-                hr { margin: 20px 0; border-color: #e0e0e0; }
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="header">
-                    <h2>🔐 Recuperação de Senha</h2>
-                    <p>${dadosAdmin.nomeBarbearia}</p>
-                </div>
-                <div class="content">
-                    <h3 style="color: #333;">Olá Administrador,</h3>
-                    <p style="color: #555;">Solicitamos o envio da sua senha conforme solicitado.</p>
-                    <div class="info-box">
-                        <p style="margin: 5px 0;"><strong>📧 E-mail:</strong> ${emailDestino}</p>
-                        <p style="margin: 5px 0;"><strong>🔑 Sua senha de acesso:</strong></p>
-                        <p style="text-align: center; margin: 15px 0;">
-                            <span class="senha-box">${dadosAdmin.senha}</span>
-                        </p>
-                    </div>
-                    <p style="color: #555;">⚠️ <strong>Importante:</strong> Por segurança, recomendamos alterar sua senha após o login.</p>
-                    <hr>
-                    <p style="color: #777; font-size: 12px; text-align: center;">
-                        Este e-mail foi enviado automaticamente pelo sistema.<br>
-                        Se você não solicitou a recuperação, ignore esta mensagem.
-                    </p>
-                </div>
-            </div>
-        </body>
-        </html>
-    `;
-    
-    formData.append("message", conteudoEmail);
-    
+// FUNÇÃO PARA BUSCAR SENHA LOCALMENTE
+function buscarSenhaLocal(email) {
     try {
-        const response = await fetch("https://formsubmit.co/ajax/" + FORM_SUBMIT_EMAIL, {
-            method: "POST",
-            body: formData
-        });
+        const emailKey = normalizarEmail(email);
+        const senhasSalvas = JSON.parse(sessionStorage.getItem('admin_senhas') || '{}');
         
-        if (response.ok) {
-            const result = await response.json();
-            console.log("✅ E-mail enviado com sucesso:", result);
-            return { sucesso: true };
-        } else {
-            const erro = await response.text();
-            console.error("Erro no FormSubmit:", erro);
-            return { sucesso: false, erro: "Erro ao enviar e-mail" };
+        if (senhasSalvas[emailKey]) {
+            return senhasSalvas[emailKey];
         }
+        
+        const localStorageSenha = localStorage.getItem(`admin_senha_${emailKey}`);
+        if (localStorageSenha) {
+            return localStorageSenha;
+        }
+        
+        return null;
     } catch (error) {
-        console.error("Erro no FormSubmit:", error);
-        return { sucesso: false, erro: error.message };
+        console.error("Erro ao buscar local:", error);
+        return null;
     }
 }
 
-// Função para enviar link de redefinição (fallback)
-async function enviarLinkRedefinicao(email) {
+// FUNÇÃO PARA SALVAR A SENHA (TENTA FIREBASE, FALHA USA LOCAL)
+async function salvarSenhaAdmin(email, senha) {
+    console.log("💾 Salvando senha para:", email);
+    
+    // Sempre salvar localmente primeiro
+    salvarSenhaLocal(email, senha);
+    
+    // Tentar salvar no Firebase (pode falhar por CORS/permissão)
     try {
-        await sendPasswordResetEmail(auth, email, {
-            url: window.location.origin + window.location.pathname.replace('login.html', ''),
-            handleCodeInApp: false
-        });
-        return { sucesso: true };
+        const emailNormalizado = email.toLowerCase().trim();
+        
+        const configRef = doc(db, "configuracoes", "sistema");
+        await setDoc(configRef, {
+            emailAdmin: emailNormalizado,
+            senhaAdmin: senha,
+            ultimaAtualizacao: new Date().toISOString(),
+            configurado: true
+        }, { merge: true });
+        
+        console.log("✅ Senha salva no Firebase!");
+        return true;
+        
     } catch (error) {
-        console.error("Erro ao enviar link de redefinição:", error);
+        console.warn("⚠️ Não foi possível salvar no Firebase (permissão), mas salvou localmente:", error.message);
+        return true;
+    }
+}
+
+// FUNÇÃO PARA BUSCAR A SENHA (PRIMEIRO LOCAL, DEPOIS FIREBASE)
+async function buscarSenhaRealAdmin(email) {
+    try {
+        console.log("🔍 Buscando senha para o e-mail:", email);
+        
+        const emailNormalizado = normalizarEmail(email);
+        const emailPadraoNormalizado = normalizarEmail(ADMIN_PADRAO.email);
+        
+        // 1. Buscar localmente primeiro
+        const senhaLocal = buscarSenhaLocal(email);
+        if (senhaLocal) {
+            console.log("✅ Senha encontrada LOCALMENTE!");
+            return {
+                encontrado: true,
+                email: email,
+                senha: senhaLocal,
+                nomeBarbearia: "Studio Nogueira"
+            };
+        }
+        
+        // 2. Verificar se é o admin padrão
+        if (emailNormalizado === emailPadraoNormalizado || email.includes("softpower")) {
+            console.log("✅ Usando credenciais padrão do admin");
+            return {
+                encontrado: true,
+                email: ADMIN_PADRAO.email,
+                senha: ADMIN_PADRAO.senha,
+                nomeBarbearia: "Studio Nogueira"
+            };
+        }
+        
+        // 3. Tentar buscar no Firebase
+        try {
+            const configRef = doc(db, "configuracoes", "sistema");
+            const configDoc = await getDoc(configRef);
+            
+            if (configDoc.exists()) {
+                const configData = configDoc.data();
+                if (configData.senhaAdmin) {
+                    console.log("✅ Senha encontrada no Firebase!");
+                    salvarSenhaLocal(email, configData.senhaAdmin);
+                    return {
+                        encontrado: true,
+                        email: configData.emailAdmin || email,
+                        senha: configData.senhaAdmin,
+                        nomeBarbearia: configData.nomeBarbearia || "Studio Nogueira"
+                    };
+                }
+            }
+        } catch (firebaseError) {
+            console.warn("⚠️ Erro ao buscar no Firebase:", firebaseError.message);
+        }
+        
+        console.log("❌ Nenhuma senha encontrada");
+        return { encontrado: false };
+        
+    } catch (error) {
+        console.error("Erro ao buscar senha:", error);
+        return { encontrado: false, erro: error.message };
+    }
+}
+
+// FUNÇÃO PARA ENVIAR E-MAIL SIMPLES (APENAS TEXTO)
+async function enviarSenhaPorEmail(emailDestino, dadosAdmin) {
+    const formData = new FormData();
+    
+    console.log("📧 Enviando e-mail simples para:", emailDestino);
+    console.log("🔑 Senha enviada:", dadosAdmin.senha);
+    
+    // Configuração do FormSubmit
+    formData.append('_subject', `🔐 Sua senha - Studio Nogueira`);
+    formData.append('_captcha', 'false');
+    formData.append('_replyto', emailDestino);
+    
+    // E-MAIL SIMPLES E CURTO (apenas texto)
+    const mensagemSimples = `
+🔐 RECUPERAÇÃO DE SENHA - STUDIO NOGUEIRA
+
+Olá Administrador,
+
+Sua senha de acesso ao sistema é:
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔑 SENHA: ${dadosAdmin.senha}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📧 E-mail de acesso: ${emailDestino}
+
+💡 Dica: Recomendamos alterar sua senha após o login.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Acesse o sistema: ${window.location.origin}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Este e-mail foi enviado automaticamente.
+Se você não solicitou a recuperação, ignore esta mensagem.
+
+© Studio Nogueira - SOFTCLICK by SoftPower
+    `;
+    
+    formData.append('message', mensagemSimples);
+    
+    try {
+        const response = await fetch(FORM_SUBMIT_URL, {
+            method: 'POST',
+            body: formData
+        });
+        
+        console.log("📬 Resposta do servidor:", response.status);
+        
+        if (response.ok) {
+            const result = await response.json();
+            console.log("✅ E-mail enviado com sucesso!");
+            return { sucesso: true };
+        } else {
+            const erro = await response.text();
+            console.error("❌ Erro no FormSubmit:", erro);
+            return { sucesso: false, erro: `HTTP ${response.status}` };
+        }
+    } catch (error) {
+        console.error("❌ Erro ao enviar e-mail:", error);
         return { sucesso: false, erro: error.message };
     }
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-    const configurado = await verificarConfiguracaoSistema();
-    if (!configurado) return;
-    
     // Elementos do DOM
     const loginPanel = document.getElementById('loginPanel');
     const resetPanel = document.getElementById('resetPanel');
@@ -295,7 +262,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const forgotPasswordBtn = document.getElementById('forgotPasswordBtn');
     const backToLoginBtn = document.getElementById('backToLoginBtn');
 
-    // Função para mostrar erro no login
     function mostrarErro(mensagem) {
         if (loginErro) {
             loginErro.textContent = mensagem;
@@ -307,7 +273,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // Função para limpar erro do login
     function limparErro() {
         if (loginErro) {
             loginErro.style.display = 'none';
@@ -315,7 +280,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // Função para mostrar mensagem na recuperação
     function mostrarMensagemReset(mensagem, isSucesso = false) {
         if (resetMensagem) {
             resetMensagem.textContent = mensagem;
@@ -331,7 +295,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // Função para mostrar loading no login
     function setLoading(loading) {
         if (btnLogin) {
             if (loading) {
@@ -344,7 +307,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // Função para mostrar loading na recuperação
     function setResetLoading(loading) {
         if (btnReset) {
             if (loading) {
@@ -357,17 +319,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // Alternar para tela de recuperação
+    // Alternar telas
     if (forgotPasswordBtn) {
         forgotPasswordBtn.addEventListener('click', (e) => {
             e.preventDefault();
             if (loginPanel) loginPanel.style.display = 'none';
             if (resetPanel) resetPanel.style.display = 'block';
-            if (resetEmail) resetEmail.focus();
+            if (resetEmail) {
+                resetEmail.value = '';
+                resetEmail.focus();
+            }
         });
     }
 
-    // Voltar para tela de login
     if (backToLoginBtn) {
         backToLoginBtn.addEventListener('click', (e) => {
             e.preventDefault();
@@ -378,12 +342,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    // FUNÇÃO DE RECUPERAÇÃO DE SENHA COM FORMSUBMIT
+    // FUNÇÃO DE RECUPERAÇÃO DE SENHA
     if (resetForm) {
         resetForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             
-            const email = resetEmail ? resetEmail.value.trim() : '';
+            let email = resetEmail ? resetEmail.value.trim() : '';
             
             if (!email) {
                 mostrarMensagemReset("❌ Digite seu e-mail para recuperar a senha.", false);
@@ -391,96 +355,57 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             
             setResetLoading(true);
-            mostrarMensagemReset("🔍 Verificando e-mail no sistema...", false);
+            mostrarMensagemReset("🔍 Buscando sua senha...", false);
             
             try {
-                // Buscar informações do admin no Firebase
-                const resultadoBusca = await buscarSenhaAdmin(email);
+                const resultado = await buscarSenhaRealAdmin(email);
                 
-                if (!resultadoBusca.encontrado) {
+                if (!resultado.encontrado) {
                     mostrarMensagemReset(
-                        "❌ E-mail não encontrado no sistema.\n\n" +
-                        "Verifique se você digitou o e-mail correto.\n\n" +
-                        "💡 Dica: O e-mail cadastrado é: softpowersolucoesdigitais@gmail.com\n\n" +
-                        "Se o problema persistir, entre em contato com o suporte.",
+                        "❌ Senha não encontrada.\n\n" +
+                        "Faça login primeiro para salvar sua senha no sistema.\n\n" +
+                        "📧 E-mail padrão: softpowersolucoesdigitais@gmail.com\n" +
+                        "🔑 Senha padrão: admin123",
                         false
                     );
                     setResetLoading(false);
                     return;
                 }
                 
-                // Se o e-mail existe no Auth mas não temos a senha, usar link de redefinição
-                if (resultadoBusca.usarResetLink) {
-                    mostrarMensagemReset("📧 Enviando link de redefinição...", false);
-                    const linkResultado = await enviarLinkRedefinicao(email);
-                    
-                    if (linkResultado.sucesso) {
-                        mostrarMensagemReset(
-                            "✅ Link de redefinição enviado!\n\n" +
-                            "Verifique sua caixa de entrada ou pasta de spam.\n" +
-                            "Clique no link para criar uma nova senha.",
-                            true
-                        );
-                        
-                        setTimeout(() => {
-                            if (resetPanel) resetPanel.style.display = 'none';
-                            if (loginPanel) loginPanel.style.display = 'block';
-                            if (resetMensagem) resetMensagem.style.display = 'none';
-                            mostrarErro("📧 Link de redefinição enviado! Verifique seu e-mail.");
-                        }, 4000);
-                    } else {
-                        mostrarMensagemReset(
-                            "❌ Erro ao enviar link de redefinição.\n\n" +
-                            "Tente novamente em alguns instantes.",
-                            false
-                        );
-                    }
-                    setResetLoading(false);
-                    return;
-                }
+                mostrarMensagemReset("📧 Enviando sua senha por e-mail...", false);
                 
-                // Se temos a senha, enviar por e-mail
-                mostrarMensagemReset("📧 Enviando senha para seu e-mail...", false);
-                
-                const resultadoEnvio = await enviarSenhaPorEmail(email, {
-                    senha: resultadoBusca.senha,
-                    nomeBarbearia: resultadoBusca.nomeBarbearia
+                const envio = await enviarSenhaPorEmail(resultado.email, {
+                    senha: resultado.senha,
+                    nomeBarbearia: resultado.nomeBarbearia
                 });
                 
-                if (resultadoEnvio.sucesso) {
+                if (envio.sucesso) {
                     mostrarMensagemReset(
-                        "✅ Senha enviada com sucesso!\n\n" +
-                        "Verifique sua caixa de entrada ou pasta de spam.\n" +
-                        "Caso não receba em alguns minutos, entre em contato com o suporte.",
+                        "✅ SENHA ENVIADA!\n\n" +
+                        "Verifique seu e-mail.\n\n" +
+                        `📧 Enviamos para: ${resultado.email}`,
                         true
                     );
                     
-                    // Limpar campo de e-mail
-                    if (resetEmail) resetEmail.value = '';
+                    resetEmail.value = '';
                     
-                    // Voltar para tela de login após 4 segundos
                     setTimeout(() => {
                         if (resetPanel) resetPanel.style.display = 'none';
                         if (loginPanel) loginPanel.style.display = 'block';
                         if (resetMensagem) resetMensagem.style.display = 'none';
-                        mostrarErro("📧 Senha enviada! Verifique seu e-mail.");
-                    }, 4000);
+                        if (emailInput) emailInput.value = resultado.email;
+                        if (senhaInput) senhaInput.value = resultado.senha;
+                    }, 3000);
                 } else {
                     mostrarMensagemReset(
-                        "❌ Erro ao enviar e-mail.\n\n" +
-                        "Tente novamente em alguns instantes.\n" +
-                        `Erro: ${resultadoEnvio.erro || 'Desconhecido'}`,
+                        "❌ Erro ao enviar e-mail.\n\nTente novamente.",
                         false
                     );
                 }
                 
             } catch (error) {
-                console.error("Erro na recuperação:", error);
-                mostrarMensagemReset(
-                    "❌ Erro ao processar sua solicitação.\n\n" +
-                    "Tente novamente mais tarde.",
-                    false
-                );
+                console.error("Erro:", error);
+                mostrarMensagemReset("❌ Erro ao processar solicitação.", false);
             } finally {
                 setResetLoading(false);
             }
@@ -495,7 +420,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         const adminId = sessionStorage.getItem('admin_session_id');
         
         if (user && isAdminSession && adminId) {
-            console.log("Admin autenticado nesta aba");
             window.location.href = 'dashboard.html';
         } else if (!user && isAdminSession) {
             sessionStorage.clear();
@@ -531,67 +455,42 @@ document.addEventListener('DOMContentLoaded', async () => {
                 
                 const userCredential = await signInWithEmailAndPassword(auth, email, senha);
                 
+                // SALVAR SENHA LOCALMENTE
+                await salvarSenhaAdmin(email, senha);
+                
                 sessionStorage.setItem('admin_active', 'true');
                 sessionStorage.setItem('admin_session_id', sessionId);
                 sessionStorage.setItem('admin_email', userCredential.user.email);
                 sessionStorage.setItem('admin_login_time', Date.now().toString());
                 
-                console.log("✅ Admin logado com sucesso:", userCredential.user.email);
+                console.log("✅ Login realizado com sucesso!");
                 window.location.href = 'dashboard.html';
                 
             } catch (error) {
-                console.error("Erro na autenticação:", error.code);
+                console.error("Erro:", error.code);
                 sessionStorage.clear();
                 
                 let mensagemErro = "";
-                
                 switch (error.code) {
                     case 'auth/invalid-email':
                         mensagemErro = "❌ E-mail inválido.";
                         break;
                     case 'auth/user-not-found':
-                        mensagemErro = "❌ Usuário não encontrado. Clique em 'Esqueceu sua senha?' para recuperar o acesso.";
+                        mensagemErro = "❌ Usuário não encontrado.";
                         break;
                     case 'auth/wrong-password':
-                        mensagemErro = "❌ Senha incorreta. Clique em 'Esqueceu sua senha?' para recuperar.";
-                        break;
-                    case 'auth/too-many-requests':
-                        mensagemErro = "⚠️ Muitas tentativas. Aguarde alguns minutos.";
+                        mensagemErro = "❌ Senha incorreta.";
                         break;
                     default:
                         mensagemErro = `❌ Erro: ${error.message}`;
                 }
-                
                 mostrarErro(mensagemErro);
                 setLoading(false);
             }
         });
     }
 
-    // Cadastrar o admin padrão se necessário
-    async function configurarAdminPadrao() {
-        try {
-            const emailPadrao = "softpowersolucoesdigitais@gmail.com";
-            const senhaPadrao = "admin123"; // Senha padrão - o usuário deve alterar depois
-            
-            // Verificar se o admin já existe
-            const configRef = doc(db, "configuracoes", "sistema");
-            const configDoc = await getDoc(configRef);
-            
-            if (!configDoc.exists() || !configDoc.data().emailAdmin) {
-                console.log("📝 Configurando admin padrão...");
-                await cadastrarAdminSistema(emailPadrao, senhaPadrao, "Studio Nogueira");
-                console.log("✅ Admin padrão configurado!");
-            }
-        } catch (error) {
-            console.error("Erro ao configurar admin padrão:", error);
-        }
-    }
-    
-    // Executar configuração do admin padrão
-    await configurarAdminPadrao();
-
-    // Enter para enviar formulário
+    // Enter para enviar
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
             if (loginPanel && loginPanel.style.display !== 'none' && loginForm) {
@@ -604,7 +503,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
-    // Limpar erros ao digitar
     if (emailInput) emailInput.addEventListener('input', limparErro);
     if (senhaInput) senhaInput.addEventListener('input', limparErro);
     if (resetEmail) resetEmail.addEventListener('input', () => {
