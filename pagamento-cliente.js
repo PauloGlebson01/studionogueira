@@ -1,5 +1,5 @@
 // pagamento-cliente.js - Versão com suporte a PACOTES e parcelas
-// Versão corrigida: Mostra apenas quantidades de parcelas, sem valores
+// Versão modificada: Envia mensagem APENAS para o WhatsApp do estabelecimento com ID da comanda
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { 
@@ -19,6 +19,12 @@ import {
     signInAnonymously, 
     onAuthStateChanged 
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+// ==================== CONFIGURAÇÃO DO WHATSAPP DO ESTABELECIMENTO ====================
+// ⚠️ ATENÇÃO: Substitua este número pelo WhatsApp da sua barbearia
+// Formato: 55 + DDD + número (sem espaços, sem caracteres especiais)
+// Exemplo: 5583986617303 (55 + 83 + 986617303)
+const TELEFONE_ESTABELECIMENTO = "5583986617303"; // <-- COLOQUE O NÚMERO DA BARBEARIA AQUI
 
 //BANCO DE DADOS
 
@@ -46,6 +52,7 @@ let metodoSelecionado = null;
 let autenticado = false;
 let clientesCache = [];
 let servicosCache = [];
+let comandaIdAtual = null; // Armazena o ID da comanda
 
 const clienteNome = document.getElementById('clienteNome');
 const servicoNome = document.getElementById('servicoNome');
@@ -238,14 +245,17 @@ function formatarData(dataStr) {
     return dataStr;
 }
 
-function enviarWhatsAppConfirmacao(dadosAgendamento, metodoSelecionado, parcelas) {
-    const telefone = dadosAgendamento.telefone || dadosAgendamento.whatsapp;
+// ==================== FUNÇÃO CORRIGIDA: Envia mensagem APENAS para o estabelecimento com ID da comanda ====================
+function enviarWhatsAppEstabelecimento(comandaId) {
+    // USA O NÚMERO DO ESTABELECIMENTO - NÃO envia para o cliente
+    const telefone = TELEFONE_ESTABELECIMENTO;
+    
     if (!telefone) {
-        console.error("Telefone não encontrado");
+        console.error("Telefone do estabelecimento não configurado");
         return false;
     }
     
-    const numeroLimpo = telefone.replace(/\D/g, "");
+    const numeroLimpo = telefone.toString().replace(/\D/g, "");
     if (numeroLimpo.length < 10) return false;
 
     let num = numeroLimpo;
@@ -266,6 +276,7 @@ function enviarWhatsAppConfirmacao(dadosAgendamento, metodoSelecionado, parcelas
             break;
         case 'cartao_credito':
             metodoNome = 'Cartão de Crédito';
+            const parcelas = (parcelasSelect && metodoSelecionado === 'cartao_credito') ? parseInt(parcelasSelect.value) : 1;
             if (parcelas > 1) {
                 textoPagamento = `💳 *Forma de Pagamento:* Cartão de Crédito (${parcelas}x)\n💰 *Pagamento:* Será realizado na barbearia no momento do atendimento`;
             } else {
@@ -292,7 +303,9 @@ function enviarWhatsAppConfirmacao(dadosAgendamento, metodoSelecionado, parcelas
         listaServicos = `📦 *PACOTE: ${pacote.nome}*\n`;
         listaServicos += `   Serviços inclusos:\n`;
         pacote.servicos.forEach((s, i) => {
-            listaServicos += `   ${i + 1}. ${s.nome}\n`;
+            const qtd = s.quantidade || 1;
+            const nomeServico = s.nome || (s.servico && s.servico.nome) || 'Serviço';
+            listaServicos += `   ${i + 1}. ${qtd}x ${nomeServico}\n`;
         });
         listaServicos += `   💰 *Valor Original:* ${formatarMoeda(pacote.precoOriginal)}\n`;
         listaServicos += `   🎯 *Preço com Desconto:* ${formatarMoeda(pacote.preco)}`;
@@ -311,34 +324,41 @@ function enviarWhatsAppConfirmacao(dadosAgendamento, metodoSelecionado, parcelas
     const valorFormatado = formatarMoeda(dadosAgendamento.valor || 0);
     const observacao = dadosAgendamento.observacaoGeral ? `\n📝 *Observação:* ${dadosAgendamento.observacaoGeral}\n` : '';
 
-    const mensagem = `Olá ${dadosAgendamento.cliente || dadosAgendamento.nome}! ✂️💈
+    // Mensagem enviada para o ESTABELECIMENTO (com dados do cliente e ID da comanda)
+    const mensagem = `🪒 *NOVO AGENDAMENTO CONFIRMADO!* 🪒
 
-✅ *SEU HORÁRIO FOI CONFIRMADO!*
+━━━━━━━━━━━━━━━━━━━━
+👤 *DADOS DO CLIENTE*
+━━━━━━━━━━━━━━━━━━━━
+👤 *Nome:* ${dadosAgendamento.cliente || dadosAgendamento.nome}
+📞 *WhatsApp:* ${dadosAgendamento.telefone || dadosAgendamento.whatsapp || 'Não informado'}
+📧 *E-mail:* ${dadosAgendamento.email || 'Não informado'}
 
-📝 *DETALHES DO ATENDIMENTO:*
-• Serviços:
+━━━━━━━━━━━━━━━━━━━━
+📅 *DETALHES DO AGENDAMENTO*
+━━━━━━━━━━━━━━━━━━━━
+📅 *Data:* ${formatarData(dadosAgendamento.data)}
+⏰ *Horário:* ${dadosAgendamento.horario}
+👨‍💼 *Barbeiro:* ${dadosAgendamento.profissional || 'Studio Nogueira'}
+
+━━━━━━━━━━━━━━━━━━━━
+✂️ *SERVIÇOS CONTRATADOS*
+━━━━━━━━━━━━━━━━━━━━
 ${listaServicos}
-• 👨‍🦱 Barbeiro: ${dadosAgendamento.profissional || 'Studio Nogueira'}
-• 📅 Data: ${formatarData(dadosAgendamento.data)}
-• ⏰ Horário: ${dadosAgendamento.horario}
-• 💰 Valor Total: ${valorFormatado}
-${observacao}
+━━━━━━━━━━━━━━━━━━━━
+💳 *PAGAMENTO*
+━━━━━━━━━━━━━━━━━━━━
 ${textoPagamento}
-
+💰 *Valor Total:* ${valorFormatado}
+${observacao}
+━━━━━━━━━━━━━━━━━━━━
 📍 *Local do Atendimento:*
 Studio Nogueira
 Rua Administrador Manoel Ângelo de Oliveira, 295
 João Pessoa - PB
 
-⚠️ *INFORMAÇÕES IMPORTANTES:*
-⏰ Chegue com 10 minutos de antecedência
-📄 Em caso de atraso ou desistência nos informar antecipadamente
-🚗 Estacionamento disponível no local
-
-✂️ *Studio Nogueira* ✂️
-Mais de 10 anos transformando estilos. 💈
-
-_Esta é uma mensagem automática. Favor não responder._`;
+---
+⚡ *Mensagem automática - Studio Nogueira*`;
 
     const url = `https://wa.me/${num}?text=${encodeURIComponent(mensagem)}`;
     
@@ -484,7 +504,11 @@ async function confirmarPagamento() {
         
         const comandaQuery = query(collection(db, "comandas"), where("agendamentoId", "==", dadosAgendamento.id));
         const comandaSnap = await getDocs(comandaQuery);
+        
+        let comandaId = null;
+        
         for (const docSnap of comandaSnap.docs) {
+            comandaId = docSnap.id; // Captura o ID da comanda
             const comandaUpdateData = {
                 status: "aberta",
                 formaPagamento: metodoSelecionado,
@@ -502,11 +526,17 @@ async function confirmarPagamento() {
             
             await updateDoc(doc(db, "comandas", docSnap.id), comandaUpdateData);
             console.log("✅ Comanda atualizada com parcelas:", parcelas);
+            console.log("📋 ID da Comanda:", comandaId);
         }
         
         showMessage(`✅ Forma de pagamento confirmada! Pagamento será realizado na barbearia.`, "success");
         
-        enviarWhatsAppConfirmacao(dadosAgendamento, metodoSelecionado, parcelas);
+        // ==================== ENVIA MENSAGEM APENAS PARA O ESTABELECIMENTO COM ID DA COMANDA ====================
+        if (comandaId) {
+            enviarWhatsAppEstabelecimento(comandaId);
+        } else {
+            console.warn("⚠️ Comanda ID não encontrado para enviar mensagem");
+        }
         
         setTimeout(() => {
             window.location.href = 'agendamento-confirmado.html';
@@ -551,6 +581,14 @@ async function carregarDados() {
         if (agendamentoDoc.exists()) {
             dadosAgendamento = { id: agendamentoDoc.id, ...agendamentoDoc.data() };
             console.log("✅ Agendamento encontrado:", dadosAgendamento);
+            
+            // Buscar o ID da comanda existente
+            const comandaQuery = query(collection(db, "comandas"), where("agendamentoId", "==", dadosAgendamento.id));
+            const comandaSnap = await getDocs(comandaQuery);
+            if (!comandaSnap.empty) {
+                comandaIdAtual = comandaSnap.docs[0].id;
+                console.log("📋 Comanda existente encontrada:", comandaIdAtual);
+            }
             
             if (clienteNome) clienteNome.textContent = dadosAgendamento.cliente || dadosAgendamento.nome || '-';
             
