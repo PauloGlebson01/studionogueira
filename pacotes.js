@@ -1,4 +1,4 @@
-// pacotes.js - Versão completa e funcionando (sem imagem fixa)
+// pacotes.js - Versão com suporte a múltiplas quantidades do mesmo serviço
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { 
     getFirestore, 
@@ -9,14 +9,11 @@ import {
     doc, 
     getDocs, 
     onSnapshot,
-    Timestamp,
-    query,
-    where
+    Timestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
-//BANCO DE DADOS
-
+// BANCO DE DADOS
 const firebaseConfig = {
     apiKey: "AIzaSyC5xXm9T2nzh6xxZ5-zrMHfCNdqQOG8SZI",
     authDomain: "studio-nogueira-e07bb.firebaseapp.com",
@@ -25,7 +22,7 @@ const firebaseConfig = {
     messagingSenderId: "150077330983",
     appId: "1:150077330983:web:a49838c4cde9df4e1de002",
     measurementId: "G-WX477KDZQC"
-  };
+};
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
@@ -35,6 +32,7 @@ let pacotes = [];
 let servicos = [];
 let pacoteParaExcluir = null;
 let imagemUploadFile = null;
+let servicosSelecionadosTemp = new Map();
 
 function formatarMoeda(valor) {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor);
@@ -65,7 +63,6 @@ function converterImagemParaBase64(file) {
     });
 }
 
-// Função para gerar cores baseadas no nome do pacote
 function getCorPorNome(nome) {
     const cores = ['#2199EF', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
     let hash = 0;
@@ -132,6 +129,15 @@ function renderizarPacotes() {
         const corIcone = getCorPorNome(pacote.nome);
         const temImagem = pacote.imagemBase64 || (pacote.imagem && pacote.imagem !== './assets/barber-perfil.jfif');
         
+        let servicosHtml = '';
+        if (pacote.servicos && pacote.servicos.length > 0) {
+            servicosHtml = pacote.servicos.map(s => {
+                const nomeServico = s.nome || (s.servico && s.servico.nome) || 'Serviço';
+                const quantidade = s.quantidade || 1;
+                return `<span class="servico-tag">${quantidade}x ${escapeHtml(nomeServico)}</span>`;
+            }).join('');
+        }
+        
         return `
         <div class="pacote-card ${pacote.status === 'inativo' ? 'inativo' : ''}">
             <div class="pacote-status ${pacote.status === 'ativo' ? 'status-ativo' : 'status-inativo'}">
@@ -149,9 +155,9 @@ function renderizarPacotes() {
                 <h3 class="pacote-nome">${escapeHtml(pacote.nome)}</h3>
                 <p class="pacote-descricao">${escapeHtml(pacote.descricao || 'Sem descrição')}</p>
                 <div class="servicos-inclusos">
-                    <h4><i class="fa-solid fa-scissors"></i> Serviços Inclusos (${pacote.servicos?.length || 0})</h4>
+                    <h4><i class="fa-solid fa-scissors"></i> Serviços Inclusos</h4>
                     <div class="servicos-lista">
-                        ${pacote.servicos?.map(s => `<span class="servico-tag">${escapeHtml(s.nome)}</span>`).join('') || 'Nenhum serviço'}
+                        ${servicosHtml || 'Nenhum serviço'}
                     </div>
                 </div>
                 <div class="pacote-precos">
@@ -192,8 +198,6 @@ function excluirPacoteHandler(e) {
 }
 
 async function venderPacote(pacoteId) {
-    console.log("🎯 Vender pacote:", pacoteId);
-    
     const pacote = pacotes.find(p => p.id === pacoteId);
     if (!pacote) {
         mostrarToast('❌ Pacote não encontrado!', 'erro');
@@ -205,11 +209,10 @@ async function venderPacote(pacoteId) {
         return;
     }
     
-    const servicosNomes = pacote.servicos.map(s => s.nome);
+    const servicosNomes = pacote.servicos.map(s => `${s.quantidade || 1}x ${s.nome || s.servico?.nome}`);
     const servicosParam = encodeURIComponent(servicosNomes.join(','));
     const url = `agendamento.html?pacote=${encodeURIComponent(pacote.nome)}&servicos=${servicosParam}&precoTotal=${pacote.preco}&pacoteId=${pacote.id}`;
     
-    console.log("🔗 Redirecionando:", url);
     window.location.href = url;
 }
 
@@ -228,8 +231,17 @@ async function editarPacote(pacoteId) {
     document.getElementById('pacoteDesconto').value = pacote.desconto || '0';
     imagemUploadFile = null;
     
-    const servicosSelecionadosIds = pacote.servicos?.map(s => s.id) || [];
-    preencherListaServicos(servicos, servicosSelecionadosIds);
+    servicosSelecionadosTemp.clear();
+    if (pacote.servicos) {
+        pacote.servicos.forEach(servico => {
+            servicosSelecionadosTemp.set(servico.servicoId || servico.id, {
+                quantidade: servico.quantidade || 1,
+                servico: servico
+            });
+        });
+    }
+    
+    preencherListaServicosComQuantidade();
     
     document.getElementById('modalTitle').textContent = 'Editar Pacote';
     document.getElementById('modalPacote').style.display = 'flex';
@@ -257,75 +269,228 @@ async function deletarPacote(id) {
     }
 }
 
-function preencherListaServicos(servicosParaExibir, servicosSelecionadosIds = []) {
+function preencherListaServicosComQuantidade() {
     const servicosLista = document.getElementById('servicosLista');
     if (!servicosLista) return;
     
     servicosLista.innerHTML = '';
     
-    if (!servicosParaExibir || servicosParaExibir.length === 0) {
-        servicosLista.innerHTML = `<div class="empty-state" style="padding: 20px;"><i class="fa-solid fa-info-circle"></i><p>Nenhum serviço cadastrado</p></div>`;
+    if (!servicos || servicos.length === 0) {
+        servicosLista.innerHTML = `
+            <div class="empty-servicos-msg">
+                <i class="fa-solid fa-cut"></i>
+                <p>Nenhum serviço cadastrado</p>
+                <p style="font-size: 0.7rem; margin-top: 8px;">Cadastre serviços primeiro em "Serviços"</p>
+            </div>`;
         return;
     }
     
-    servicosParaExibir.forEach(servico => {
-        const isChecked = servicosSelecionadosIds.includes(servico.id);
-        const label = document.createElement('label');
-        label.className = 'checkbox-servico';
-        label.innerHTML = `
-            <input type="checkbox" value="${servico.id}" data-preco="${servico.preco}" data-nome="${escapeHtml(servico.nome)}" ${isChecked ? 'checked' : ''}>
-            <div class="servico-info"><div class="servico-nome">${escapeHtml(servico.nome)}</div><div class="servico-preco">${formatarMoeda(servico.preco)}</div></div>
-            <div class="preco-servico">${formatarMoeda(servico.preco)}</div>
+    const header = document.createElement('div');
+    header.className = 'servicos-table-header';
+    header.innerHTML = `
+        <span><i class="fa-regular fa-square-check"></i></span>
+        <span>Serviço</span>
+        <span>Valor Unit.</span>
+        <span>Quantidade</span>
+        <span>Subtotal</span>
+    `;
+    servicosLista.appendChild(header);
+    
+    servicos.forEach(servico => {
+        const selecionado = servicosSelecionadosTemp.get(servico.id);
+        const quantidade = selecionado ? selecionado.quantidade : 0;
+        const subtotal = servico.preco * quantidade;
+        
+        const row = document.createElement('div');
+        row.className = 'servico-table-row';
+        row.setAttribute('data-servico-id', servico.id);
+        row.innerHTML = `
+            <input type="checkbox" class="servico-checkbox" value="${servico.id}" data-preco="${servico.preco}" data-nome="${escapeHtml(servico.nome)}" ${quantidade > 0 ? 'checked' : ''}>
+            <div class="servico-info">
+                <div class="servico-nome">${escapeHtml(servico.nome)}</div>
+                <div class="servico-preco-unitario"><span class="servico-preco-label">por serviço</span></div>
+            </div>
+            <div class="servico-valor-unitario">${formatarMoeda(servico.preco)}</div>
+            <div class="servico-quantidade-control">
+                <button type="button" class="btn-quantidade" data-servico-id="${servico.id}" data-op="minus" ${quantidade === 0 ? 'disabled' : ''}>−</button>
+                <span class="quantidade-valor" data-servico-id="${servico.id}">${quantidade}</span>
+                <button type="button" class="btn-quantidade" data-servico-id="${servico.id}" data-op="plus">+</button>
+            </div>
+            <div class="servico-subtotal" data-servico-id="${servico.id}">${formatarMoeda(subtotal)}</div>
         `;
-        servicosLista.appendChild(label);
+        servicosLista.appendChild(row);
     });
     
-    document.querySelectorAll('.checkbox-servico input').forEach(checkbox => {
-        checkbox.removeEventListener('change', calcularPrecoTotal);
-        checkbox.addEventListener('change', calcularPrecoTotal);
+    const footer = document.createElement('div');
+    footer.className = 'servicos-table-footer';
+    footer.id = 'servicosTableFooter';
+    servicosLista.appendChild(footer);
+    
+    document.querySelectorAll('.btn-quantidade').forEach(btn => {
+        btn.removeEventListener('click', handleQuantidadeClick);
+        btn.addEventListener('click', handleQuantidadeClick);
     });
-    calcularPrecoTotal();
+    
+    document.querySelectorAll('.servico-checkbox').forEach(checkbox => {
+        checkbox.removeEventListener('change', handleCheckboxChange);
+        checkbox.addEventListener('change', handleCheckboxChange);
+    });
+    
+    atualizarTotais();
 }
 
-function calcularPrecoOriginal() {
+function handleQuantidadeClick(e) {
+    e.preventDefault();
+    const servicoId = e.currentTarget.getAttribute('data-servico-id');
+    const operacao = e.currentTarget.getAttribute('data-op');
+    const checkbox = document.querySelector(`.servico-checkbox[value="${servicoId}"]`);
+    
+    let selecionado = servicosSelecionadosTemp.get(servicoId);
+    let novaQuantidade = selecionado ? selecionado.quantidade : 0;
+    
+    if (operacao === 'plus') {
+        novaQuantidade++;
+        if (!selecionado) {
+            servicosSelecionadosTemp.set(servicoId, { quantidade: 1, servico: null });
+        } else {
+            selecionado.quantidade = novaQuantidade;
+        }
+        if (checkbox && !checkbox.checked) checkbox.checked = true;
+    } else if (operacao === 'minus' && novaQuantidade > 0) {
+        novaQuantidade--;
+        if (novaQuantidade === 0) {
+            servicosSelecionadosTemp.delete(servicoId);
+            if (checkbox) checkbox.checked = false;
+        } else if (selecionado) {
+            selecionado.quantidade = novaQuantidade;
+        }
+    }
+    
+    const quantidadeSpan = document.querySelector(`.quantidade-valor[data-servico-id="${servicoId}"]`);
+    if (quantidadeSpan) quantidadeSpan.textContent = novaQuantidade;
+    
+    const btnMinus = document.querySelector(`.btn-quantidade[data-servico-id="${servicoId}"][data-op="minus"]`);
+    if (btnMinus) btnMinus.disabled = novaQuantidade === 0;
+    
+    const servico = servicos.find(s => s.id === servicoId);
+    const subtotal = servico ? servico.preco * novaQuantidade : 0;
+    
+    const subtotalSpan = document.querySelector(`.servico-subtotal[data-servico-id="${servicoId}"]`);
+    if (subtotalSpan) subtotalSpan.textContent = formatarMoeda(subtotal);
+    
+    atualizarTotais();
+}
+
+function handleCheckboxChange(e) {
+    const servicoId = e.currentTarget.value;
+    const isChecked = e.currentTarget.checked;
+    const servico = servicos.find(s => s.id === servicoId);
+    
+    if (isChecked) {
+        if (!servicosSelecionadosTemp.has(servicoId)) {
+            servicosSelecionadosTemp.set(servicoId, { quantidade: 1, servico: servico });
+        }
+        const quantidadeSpan = document.querySelector(`.quantidade-valor[data-servico-id="${servicoId}"]`);
+        if (quantidadeSpan && quantidadeSpan.textContent === '0') {
+            quantidadeSpan.textContent = '1';
+        }
+        const btnMinus = document.querySelector(`.btn-quantidade[data-servico-id="${servicoId}"][data-op="minus"]`);
+        if (btnMinus) btnMinus.disabled = false;
+    } else {
+        servicosSelecionadosTemp.delete(servicoId);
+        const quantidadeSpan = document.querySelector(`.quantidade-valor[data-servico-id="${servicoId}"]`);
+        if (quantidadeSpan) quantidadeSpan.textContent = '0';
+        const btnMinus = document.querySelector(`.btn-quantidade[data-servico-id="${servicoId}"][data-op="minus"]`);
+        if (btnMinus) btnMinus.disabled = true;
+    }
+    
+    const subtotal = servico ? servico.preco * (servicosSelecionadosTemp.get(servicoId)?.quantidade || 0) : 0;
+    const subtotalSpan = document.querySelector(`.servico-subtotal[data-servico-id="${servicoId}"]`);
+    if (subtotalSpan) subtotalSpan.textContent = formatarMoeda(subtotal);
+    
+    atualizarTotais();
+}
+
+function calcularPrecoOriginalTotal() {
     let total = 0;
-    document.querySelectorAll('.checkbox-servico input:checked').forEach(cb => {
-        total += parseFloat(cb.getAttribute('data-preco')) || 0;
-    });
+    for (const [servicoId, data] of servicosSelecionadosTemp) {
+        const servico = servicos.find(s => s.id === servicoId);
+        if (servico) {
+            total += servico.preco * data.quantidade;
+        }
+    }
     return total;
 }
 
-function calcularPrecoTotal() {
-    let total = 0;
-    document.querySelectorAll('.checkbox-servico input:checked').forEach(cb => {
-        total += parseFloat(cb.getAttribute('data-preco')) || 0;
-    });
-    const precoInput = document.getElementById('pacotePreco');
-    if (precoInput) precoInput.value = total.toFixed(2);
-    calcularDesconto();
-}
-
-function calcularDesconto() {
-    const precoOriginal = calcularPrecoOriginal();
-    const precoVenda = parseFloat(document.getElementById('pacotePreco')?.value) || 0;
+function atualizarTotais() {
+    const totalOriginal = calcularPrecoOriginalTotal();
+    const precoPacoteInput = document.getElementById('pacotePreco');
     const descontoInput = document.getElementById('pacoteDesconto');
-    if (precoOriginal > 0 && precoVenda > 0 && precoVenda < precoOriginal) {
-        descontoInput.value = ((precoOriginal - precoVenda) / precoOriginal * 100).toFixed(1);
-    } else if (precoVenda >= precoOriginal && precoOriginal > 0) {
-        descontoInput.value = '0';
+    
+    let precoAtual = parseFloat(precoPacoteInput?.value);
+    if (isNaN(precoAtual)) precoAtual = totalOriginal;
+    
+    let descontoPercentual = 0;
+    if (totalOriginal > 0 && precoAtual < totalOriginal) {
+        descontoPercentual = ((totalOriginal - precoAtual) / totalOriginal * 100);
+        if (descontoInput) descontoInput.value = descontoPercentual.toFixed(1);
+    } else if (precoAtual >= totalOriginal) {
+        if (descontoInput) descontoInput.value = '0';
+    }
+    
+    const economia = totalOriginal - precoAtual;
+    
+    const footer = document.getElementById('servicosTableFooter');
+    if (footer) {
+        footer.innerHTML = `
+            <div class="total-info">
+                <div class="total-item">
+                    <span class="label">📦 Valor total original:</span>
+                    <span class="total-original">${formatarMoeda(totalOriginal)}</span>
+                </div>
+                ${economia > 0 ? `
+                <div class="total-item">
+                    <span class="label">🏷️ Desconto:</span>
+                    <span class="total-desconto">${descontoPercentual.toFixed(1)}% (Economize ${formatarMoeda(economia)})</span>
+                </div>
+                ` : ''}
+                <div class="total-item">
+                    <span class="label">💎 Preço do pacote:</span>
+                    <span class="total-pacote">${formatarMoeda(precoAtual)}</span>
+                </div>
+            </div>
+        `;
     }
 }
 
 function aplicarDescontoPercentual() {
-    const precoOriginal = calcularPrecoOriginal();
+    const totalOriginal = calcularPrecoOriginalTotal();
     const desconto = parseFloat(document.getElementById('pacoteDesconto')?.value) || 0;
-    if (precoOriginal > 0 && desconto > 0) {
-        document.getElementById('pacotePreco').value = (precoOriginal * (1 - desconto / 100)).toFixed(2);
-    } else if (desconto === 0 && precoOriginal > 0) {
-        document.getElementById('pacotePreco').value = precoOriginal.toFixed(2);
+    const precoInput = document.getElementById('pacotePreco');
+    
+    if (totalOriginal > 0 && desconto > 0) {
+        const novoPreco = totalOriginal * (1 - desconto / 100);
+        if (precoInput) precoInput.value = novoPreco.toFixed(2);
+    } else if (desconto === 0 && totalOriginal > 0) {
+        if (precoInput) precoInput.value = totalOriginal.toFixed(2);
     }
+    
+    atualizarTotais();
 }
 
+function handlePrecoManualChange() {
+    const totalOriginal = calcularPrecoOriginalTotal();
+    const precoInput = document.getElementById('pacotePreco');
+    const precoAtual = parseFloat(precoInput?.value);
+    
+    if (!isNaN(precoAtual) && totalOriginal > 0 && precoAtual > totalOriginal) {
+        precoInput.value = totalOriginal.toFixed(2);
+    }
+    
+    atualizarTotais();
+}
+
+// Event Listeners
 document.getElementById('btnNovoPacote')?.addEventListener('click', async () => {
     document.getElementById('pacoteId').value = '';
     document.getElementById('pacoteNome').value = '';
@@ -336,15 +501,16 @@ document.getElementById('btnNovoPacote')?.addEventListener('click', async () => 
     document.getElementById('pacoteDesconto').value = '0';
     document.getElementById('pacoteImagem').value = '';
     imagemUploadFile = null;
+    servicosSelecionadosTemp.clear();
     
     await carregarServicos();
-    preencherListaServicos(servicos, []);
+    preencherListaServicosComQuantidade();
     
     document.getElementById('modalTitle').textContent = 'Criar Novo Pacote';
     document.getElementById('modalPacote').style.display = 'flex';
 });
 
-document.getElementById('pacotePreco')?.addEventListener('input', calcularDesconto);
+document.getElementById('pacotePreco')?.addEventListener('input', handlePrecoManualChange);
 document.getElementById('pacoteDesconto')?.addEventListener('input', aplicarDescontoPercentual);
 document.getElementById('pacoteImagem')?.addEventListener('change', (e) => {
     if (e.target.files && e.target.files[0]) {
@@ -356,25 +522,36 @@ document.getElementById('pacoteImagem')?.addEventListener('change', (e) => {
 document.getElementById('formPacote')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     
-    const servicosSelecionados = [];
-    document.querySelectorAll('.checkbox-servico input:checked').forEach(checkbox => {
-        servicosSelecionados.push({
-            id: checkbox.value,
-            nome: checkbox.getAttribute('data-nome'),
-            preco: parseFloat(checkbox.getAttribute('data-preco'))
-        });
-    });
+    const servicosParaSalvar = [];
+    for (const [servicoId, data] of servicosSelecionadosTemp) {
+        const servico = servicos.find(s => s.id === servicoId);
+        if (servico && data.quantidade > 0) {
+            servicosParaSalvar.push({
+                id: servicoId,
+                servicoId: servicoId,
+                nome: servico.nome,
+                quantidade: data.quantidade,
+                precoUnitario: servico.preco,
+                subtotal: servico.preco * data.quantidade
+            });
+        }
+    }
     
-    if (servicosSelecionados.length === 0) {
+    if (servicosParaSalvar.length === 0) {
         mostrarToast('⚠️ Selecione pelo menos um serviço!', 'erro');
         return;
     }
     
-    const precoOriginal = calcularPrecoOriginal();
-    const precoComDesconto = parseFloat(document.getElementById('pacotePreco').value);
+    const precoOriginal = calcularPrecoOriginalTotal();
+    const precoPacote = parseFloat(document.getElementById('pacotePreco').value);
     
-    if (precoComDesconto > precoOriginal) {
-        mostrarToast('⚠️ O preço com desconto não pode ser maior que o preço original!', 'erro');
+    if (isNaN(precoPacote) || precoPacote <= 0) {
+        mostrarToast('⚠️ Informe um preço válido para o pacote!', 'erro');
+        return;
+    }
+    
+    if (precoPacote > precoOriginal) {
+        mostrarToast('⚠️ O preço do pacote não pode ser maior que a soma dos serviços!', 'erro');
         return;
     }
     
@@ -390,9 +567,9 @@ document.getElementById('formPacote')?.addEventListener('submit', async (e) => {
     const pacoteData = {
         nome: document.getElementById('pacoteNome').value,
         descricao: document.getElementById('pacoteDescricao').value,
-        servicos: servicosSelecionados,
+        servicos: servicosParaSalvar,
         precoOriginal: precoOriginal,
-        preco: precoComDesconto,
+        preco: precoPacote,
         desconto: parseFloat(document.getElementById('pacoteDesconto').value) || 0,
         validade: parseInt(document.getElementById('pacoteValidade').value),
         status: document.getElementById('pacoteStatus').value,
@@ -416,6 +593,7 @@ document.getElementById('formPacote')?.addEventListener('submit', async (e) => {
         fecharModais();
         document.getElementById('formPacote').reset();
         imagemUploadFile = null;
+        servicosSelecionadosTemp.clear();
     } catch (error) {
         mostrarToast('❌ Erro ao salvar pacote: ' + error.message, 'erro');
     }
@@ -463,4 +641,4 @@ document.getElementById('logout')?.addEventListener('click', async () => {
     window.location.href = 'login.html';
 });
 
-console.log("🚀 Sistema de Pacotes carregado!");
+console.log("🚀 Sistema de Pacotes carregado! (Versão com quantidades)");

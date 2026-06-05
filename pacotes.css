@@ -500,7 +500,7 @@
     background: var(--bg-card);
     border-radius: 28px;
     width: 90%;
-    max-width: 700px;
+    max-width: 900px;
     max-height: 90vh;
     overflow-y: auto;
     border: 1px solid var(--border-color);
@@ -622,13 +622,16 @@
     gap: 16px;
 }
 
-/* Serviços Checklist */
+/* ============================================ */
+/* ESTILOS PARA SERVIÇOS COM QUANTIDADE - TABELA */
+/* ============================================ */
+
 .servicos-checklist {
-    max-height: 300px;
+    max-height: 400px;
     overflow-y: auto;
     background: var(--bg-dark);
     border-radius: 12px;
-    padding: 8px;
+    padding: 12px;
     border: 1px solid var(--border-color);
 }
 
@@ -646,54 +649,215 @@
     border-radius: 3px;
 }
 
-.servicos-checklist::-webkit-scrollbar-thumb:hover {
-    background: #1a7fcc;
+/* Cabeçalho da tabela */
+.servicos-table-header {
+    display: grid;
+    grid-template-columns: 32px 1fr 100px 100px 100px;
+    gap: 8px;
+    padding: 10px 12px;
+    background: rgba(33, 153, 239, 0.1);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border-color);
 }
 
-.checkbox-servico {
-    display: flex;
+.servicos-table-header span:first-child {
+    text-align: center;
+}
+
+.servicos-table-header span:nth-child(2) {
+    text-align: left;
+}
+
+.servicos-table-header span {
+    text-align: center;
+}
+
+/* Linha do serviço */
+.servico-table-row {
+    display: grid;
+    grid-template-columns: 32px 1fr 100px 100px 100px;
+    gap: 8px;
     align-items: center;
-    gap: 12px;
-    padding: 10px;
+    padding: 10px 12px;
     margin: 4px 0;
     background: var(--bg-card);
     border-radius: 10px;
-    cursor: pointer;
     transition: all 0.2s;
+    border: 1px solid transparent;
 }
 
-.checkbox-servico:hover {
-    background: rgba(33, 153, 239, 0.1);
-    transform: translateX(4px);
+.servico-table-row:hover {
+    background: rgba(33, 153, 239, 0.08);
+    border-color: var(--border-color);
 }
 
-.checkbox-servico input[type="checkbox"] {
+.servico-checkbox {
     width: 18px;
     height: 18px;
     cursor: pointer;
-    margin: 0;
     accent-color: #2199EF;
+    margin: 0 auto;
+    display: block;
 }
 
 .servico-info {
-    flex: 1;
+    text-align: left;
 }
 
 .servico-nome {
     font-weight: 600;
     font-size: 0.85rem;
+    color: #fff;
     margin-bottom: 2px;
 }
 
-.servico-preco {
-    font-size: 0.7rem;
+.servico-preco-unitario {
+    font-size: 0.65rem;
     color: var(--text-muted);
 }
 
-.preco-servico {
-    font-weight: 700;
+.servico-preco-label {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    display: inline-block;
+    margin-right: 4px;
+}
+
+.servico-valor-unitario {
+    text-align: center;
+    font-weight: 500;
     color: #2199EF;
     font-size: 0.85rem;
+}
+
+.servico-quantidade-control {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.btn-quantidade {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    background: var(--bg-dark);
+    border: 1px solid var(--border-color);
+    color: var(--text-main);
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 1rem;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-quantidade:hover:not(:disabled) {
+    background: #2199EF;
+    border-color: #2199EF;
+    color: white;
+    transform: scale(1.05);
+}
+
+.btn-quantidade:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.quantidade-valor {
+    min-width: 30px;
+    text-align: center;
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: #fff;
+}
+
+.servico-subtotal {
+    text-align: center;
+    font-weight: 700;
+    color: #10b981;
+    font-size: 0.85rem;
+}
+
+/* Rodapé da tabela com totais */
+.servicos-table-footer {
+    margin-top: 16px;
+    padding: 12px;
+    background: linear-gradient(135deg, rgba(33, 153, 239, 0.1), rgba(16, 185, 129, 0.05));
+    border-radius: 10px;
+    border: 1px solid var(--border-color);
+}
+
+.total-info {
+    display: flex;
+    justify-content: flex-end;
+    align-items: baseline;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.total-item {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 8px 16px;
+    background: var(--bg-dark);
+    border-radius: 8px;
+}
+
+.total-item .label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+.total-original {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-decoration: line-through;
+}
+
+.total-pacote {
+    font-size: 1.2rem;
+    font-weight: 800;
+    color: #2199EF;
+}
+
+.total-desconto {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #10b981;
+}
+
+.empty-servicos-msg {
+    text-align: center;
+    padding: 30px;
+    color: var(--text-muted);
+}
+
+.empty-servicos-msg i {
+    font-size: 2rem;
+    margin-bottom: 10px;
+    display: block;
+    opacity: 0.5;
+}
+
+/* Mensagem de informação do preço original */
+.preco-total-detalhe {
+    margin-top: 12px;
+    padding: 10px;
+    background: rgba(33, 153, 239, 0.05);
+    border-radius: 10px;
+    border: 1px solid var(--border-color);
+    text-align: center;
 }
 
 /* Botões padrão do sistema */
@@ -932,6 +1096,62 @@
         min-width: calc(33.33% - 4px);
         font-size: 0.65rem;
         padding: 6px 8px;
+    }
+    
+    /* Responsivo para tabela de serviços */
+    .servicos-table-header {
+        display: none;
+    }
+    
+    .servico-table-row {
+        grid-template-columns: 1fr;
+        gap: 8px;
+        padding: 12px;
+        position: relative;
+    }
+    
+    .servico-checkbox {
+        position: absolute;
+        top: 12px;
+        left: 12px;
+    }
+    
+    .servico-info {
+        padding-left: 28px;
+        margin-bottom: 8px;
+    }
+    
+    .servico-quantidade-control {
+        justify-content: flex-start;
+        margin-top: 8px;
+    }
+    
+    .servico-valor-unitario,
+    .servico-subtotal {
+        text-align: left;
+        margin-top: 4px;
+    }
+    
+    .servico-valor-unitario::before {
+        content: "Valor unitário: ";
+        font-size: 0.65rem;
+        color: var(--text-muted);
+    }
+    
+    .servico-subtotal::before {
+        content: "Subtotal: ";
+        font-size: 0.65rem;
+        color: var(--text-muted);
+    }
+    
+    .total-info {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+    }
+    
+    .total-item {
+        justify-content: space-between;
     }
     
     .modal-content {
