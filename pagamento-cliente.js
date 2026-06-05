@@ -332,7 +332,7 @@ João Pessoa - PB
 
 ⚠️ *INFORMAÇÕES IMPORTANTES:*
 ⏰ Chegue com 10 minutos de antecedência
-📄 Em caso de atraso pode afetar os outros agendamentos
+📄 Em caso de atraso ou desistência nos informar antecipadamente
 🚗 Estacionamento disponível no local
 
 ✂️ *Studio Nogueira* ✂️
