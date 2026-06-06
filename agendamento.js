@@ -1,5 +1,6 @@
-// agendamento.js - Versão com PREENCHIMENTO AUTOMÁTICO de dados do cliente
+// agendamento.js - Versão com VERIFICAÇÃO DE BLOQUEIOS E DURAÇÃO DE SERVIÇOS
 // Ao digitar o telefone, busca automaticamente os dados do cliente se já existir
+// Os horários são calculados dinamicamente com base na duração dos serviços
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { 
@@ -22,14 +23,14 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 const firebaseConfig = {
-    apiKey: "AIzaSyC5xXm9T2nzh6xxZ5-zrMHfCNdqQOG8SZI",
-    authDomain: "studio-nogueira-e07bb.firebaseapp.com",
-    projectId: "studio-nogueira-e07bb",
-    storageBucket: "studio-nogueira-e07bb.firebasestorage.app",
-    messagingSenderId: "150077330983",
-    appId: "1:150077330983:web:a49838c4cde9df4e1de002",
-    measurementId: "G-WX477KDZQC"
-  };
+    apiKey: "AIzaSyCgarMuCZ4sT-VO_ldyQjyG5MB6mR6i8rU",
+    authDomain: "barbearia-softclick.firebaseapp.com",
+    projectId: "barbearia-softclick",
+    storageBucket: "barbearia-softclick.firebasestorage.app",
+    messagingSenderId: "1079307759020",
+    appId: "1:1079307759020:web:231e08fb89fcb6b1e51e09",
+    measurementId: "G-SKF0BNWEWK"
+};
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -65,10 +66,48 @@ const horariosQuintaSabado = [
     "14:00", "14:40", "15:20", "16:00", "16:40", "17:20", "18:00", "18:40"
 ];
 
+// Horário limite de fechamento (20:00)
+const HORARIO_LIMITE = "20:00";
+
 let camposPreenchidos = { nome: false, telefone: false, profissional: false, data: false, servicos: false };
 let usuarioAutenticado = false;
 let servicosDisponiveis = [];
 let pacoteAtual = null;
+let bloqueiosCache = new Map(); // Cache de bloqueios para evitar múltiplas requisições
+
+// ==================== FUNÇÕES DE UTILIDADE ====================
+
+// Converter horário (string) para minutos do dia
+function horarioParaMinutos(horario) {
+    if (!horario) return 0;
+    const [horas, minutos] = horario.split(':').map(Number);
+    return horas * 60 + minutos;
+}
+
+// Converter minutos para horário (string)
+function minutosParaHorario(minutos) {
+    const horas = Math.floor(minutos / 60);
+    const mins = minutos % 60;
+    return `${String(horas).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+}
+
+// Calcular duração total dos serviços selecionados
+function calcularDuracaoTotal() {
+    if (pacoteAtual && pacoteAtual.duracaoTotal) {
+        return pacoteAtual.duracaoTotal;
+    }
+    
+    let duracaoTotal = 0;
+    document.querySelectorAll('.servico-select').forEach(select => {
+        const selectedOption = select.options[select.selectedIndex];
+        const servicoId = selectedOption?.getAttribute('data-id');
+        const servico = servicosDisponiveis.find(s => s.id === servicoId);
+        if (servico && servico.duracao) {
+            duracaoTotal += servico.duracao;
+        }
+    });
+    return duracaoTotal > 0 ? duracaoTotal : 60; // mínimo 60 minutos
+}
 
 // ==================== FUNÇÃO PARA NORMALIZAR TEXTOS ====================
 function normalizarTexto(texto) {
@@ -124,6 +163,75 @@ async function buscarClientePorTelefone(telefone) {
         console.error("Erro ao buscar cliente:", error);
         return null;
     }
+}
+
+// ==================== FUNÇÃO PARA BUSCAR BLOQUEIOS ====================
+async function buscarBloqueios(data, profissionalId = null) {
+    if (!data) return [];
+    
+    const cacheKey = `${data}_${profissionalId || "todos"}`;
+    if (bloqueiosCache.has(cacheKey)) {
+        return bloqueiosCache.get(cacheKey);
+    }
+    
+    try {
+        const bloqueiosRef = collection(db, "bloqueios");
+        const q = query(bloqueiosRef, where("ativo", "==", true));
+        const snapshot = await getDocs(q);
+        
+        const bloqueios = [];
+        
+        snapshot.forEach(doc => {
+            const bloqueio = { id: doc.id, ...doc.data() };
+            
+            let aplica = false;
+            
+            if (bloqueio.tipo === "dia" && bloqueio.data === data) {
+                aplica = true;
+            }
+            else if (bloqueio.tipo === "periodo") {
+                if (bloqueio.dataInicio <= data && bloqueio.dataFim >= data) {
+                    aplica = true;
+                }
+            }
+            else if (bloqueio.tipo === "horario" && bloqueio.data === data) {
+                aplica = true;
+            }
+            
+            if (aplica) {
+                if (bloqueio.profissionalId && profissionalId && bloqueio.profissionalId !== profissionalId) {
+                    return;
+                }
+                bloqueios.push(bloqueio);
+            }
+        });
+        
+        bloqueiosCache.set(cacheKey, bloqueios);
+        
+        setTimeout(() => bloqueiosCache.delete(cacheKey), 5 * 60 * 1000);
+        
+        return bloqueios;
+        
+    } catch (error) {
+        console.error("Erro ao buscar bloqueios:", error);
+        return [];
+    }
+}
+
+// ==================== FUNÇÃO PARA VERIFICAR SE HORÁRIO ESTÁ BLOQUEADO ====================
+async function isHorarioBloqueado(data, horario, profissionalId) {
+    const bloqueios = await buscarBloqueios(data, profissionalId);
+    
+    for (const bloqueio of bloqueios) {
+        if (bloqueio.tipo === "dia" || bloqueio.tipo === "periodo") {
+            return true;
+        }
+        if (bloqueio.tipo === "horario" && bloqueio.horario === horario) {
+            return true;
+        }
+    }
+    
+    return false;
 }
 
 // ==================== FUNÇÃO PARA AUTO PREENCHER DADOS DO CLIENTE ====================
@@ -513,7 +621,8 @@ async function processarPacoteUrl() {
             precoOriginal: pacoteAtual.precoOriginal || pacoteAtual.preco,
             preco: precoTotal ? parseFloat(precoTotal) : pacoteAtual.preco,
             desconto: pacoteAtual.desconto || 0,
-            servicos: pacoteAtual.servicos || []
+            servicos: pacoteAtual.servicos || [],
+            duracaoTotal: pacoteAtual.duracaoTotal || 60
         };
         
         if (pacoteAtual.desconto === 0 && pacoteAtual.precoOriginal > pacoteAtual.preco) {
@@ -717,7 +826,8 @@ function popularSelectServico(selectElement) {
         option.value = servico.nome;
         option.setAttribute('data-preco', servico.preco);
         option.setAttribute('data-id', servico.id);
-        option.textContent = `${servico.nome} - ${formatarMoeda(servico.preco)}`;
+        option.setAttribute('data-duracao', servico.duracao);
+        option.textContent = `${servico.nome} - ${formatarMoeda(servico.preco)} (${Math.floor(servico.duracao / 60)}h${servico.duracao % 60}min)`;
         selectElement.appendChild(option);
     });
     
@@ -790,6 +900,9 @@ function adicionarServico() {
     novoServicoSelect.addEventListener('change', () => {
         calcularValorTotal();
         verificarCamposPreenchidos();
+        if (verificarCamposPreenchidos()) {
+            atualizarHorarios();
+        }
     });
     
     const btnRemover = novoServico.querySelector('.btn-remover-servico');
@@ -798,6 +911,9 @@ function adicionarServico() {
             novoServico.remove();
             calcularValorTotal();
             verificarCamposPreenchidos();
+            if (verificarCamposPreenchidos()) {
+                atualizarHorarios();
+            }
         } else {
             mostrarMensagem("Você precisa manter pelo menos um serviço.", "erro");
         }
@@ -816,7 +932,10 @@ function configurarEventosServicos() {
         select.removeEventListener('change', () => {});
         select.addEventListener('change', () => { 
             calcularValorTotal(); 
-            verificarCamposPreenchidos(); 
+            verificarCamposPreenchidos();
+            if (verificarCamposPreenchidos()) {
+                atualizarHorarios();
+            }
         });
     });
 }
@@ -947,21 +1066,18 @@ function getNomeDiaSemana(dataStr) {
 function getHorariosPorDia(dataStr) {
     const diaSemana = getDiaSemana(dataStr);
     
-    // Segunda (1), Terça (2), Quarta (3) -> horários Segunda-Quarta
     if (diaSemana >= 1 && diaSemana <= 3) {
         return { 
             horarios: horariosSegundaQuarta,
             descricao: "Segunda à Quarta"
         };
     }
-    // Quinta (4), Sexta (5), Sábado (6) -> horários Quinta-Sábado
     else if (diaSemana >= 4 && diaSemana <= 6) {
         return { 
             horarios: horariosQuintaSabado,
             descricao: "Quinta à Sábado"
         };
     }
-    // Domingo (0) - não atende
     else {
         return { 
             horarios: [],
@@ -973,7 +1089,6 @@ function getHorariosPorDia(dataStr) {
 function getInfoAtendimentoPorDia(dataStr) {
     const diaSemana = getDiaSemana(dataStr);
     
-    // Domingo - não atende
     if (diaSemana === 0) {
         return { 
             temAtendimento: false, 
@@ -1034,7 +1149,7 @@ function configurarDataMinima() {
     dataInput.min = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
 }
 
-// ==================== ATUALIZAR HORÁRIOS ====================
+// ==================== ATUALIZAR HORÁRIOS (COM VERIFICAÇÃO DE DURAÇÃO E BLOQUEIOS) ====================
 async function atualizarHorarios() {
     const data = dataInput.value;
     const profissionalId = profissionalSelect?.value;
@@ -1042,21 +1157,30 @@ async function atualizarHorarios() {
     
     if (!data || !profissionalId) return;
     
+    // Calcular duração total dos serviços selecionados
+    const duracaoTotal = calcularDuracaoTotal();
+    if (duracaoTotal === 0) {
+        horariosDiv.innerHTML = `<div class="aviso-campos"><i class="fa-solid fa-clock"></i><p>Selecione os serviços primeiro</p></div>`;
+        return;
+    }
+    
     const infoAtendimento = getInfoAtendimentoPorDia(data);
     if (!infoAtendimento.temAtendimento) {
         horariosDiv.innerHTML = `<div class="aviso-campos"><i class="fa-solid fa-calendar-xmark"></i><p>${infoAtendimento.mensagem}</p></div>`;
         return;
     }
     
-    horariosDiv.innerHTML = '<div class="loading-horarios"><i class="fas fa-spinner fa-spin"></i> Verificando horários...</div>';
+    horariosDiv.innerHTML = '<div class="loading-horarios"><i class="fas fa-spinner fa-spin"></i> Verificando horários disponíveis...</div>';
     
     try {
+        // Buscar agendamentos existentes
         const agendamentosRef = collection(db, "agendamentos");
         const q1 = query(agendamentosRef, where("data", "==", data), where("profissionalId", "==", profissionalId));
         const q2 = query(agendamentosRef, where("data", "==", data), where("profissional", "==", profissionalNome));
         
         const [snapshot1, snapshot2] = await Promise.all([getDocs(q1), getDocs(q2)]);
         
+        // Buscar comandas finalizadas
         const comandasRef = collection(db, "comandas");
         const comandasQuery = query(comandasRef, where("status", "==", "finalizada"));
         const comandasSnapshot = await getDocs(comandasQuery);
@@ -1069,33 +1193,102 @@ async function atualizarHorarios() {
             }
         });
         
-        const ocupados = new Set();
+        // Coletar horários ocupados com duração
+        const horariosOcupados = [];
         
-        function isHorarioOcupado(agendamento, agendamentoId) {
+        function processarAgendamento(agendamento, agendamentoId) {
             const status = agendamento.status;
-            if (status === 'confirmado' || status === 'aguardando_pagamento') return true;
-            if (status === 'finalizado') return true;
-            if (agendamentosFinalizados.has(agendamentoId)) return true;
-            return false;
+            if ((status === 'confirmado' || status === 'aguardando_pagamento' || status === 'finalizado') && 
+                !agendamentosFinalizados.has(agendamentoId) && agendamento.horario) {
+                
+                let duracaoAgendamento = 60; // padrão 60 minutos
+                
+                // Calcular duração baseada nos serviços do agendamento
+                if (agendamento.servicos && Array.isArray(agendamento.servicos) && agendamento.servicos.length > 0) {
+                    duracaoAgendamento = 0;
+                    agendamento.servicos.forEach(servico => {
+                        const servicoCompleto = servicosDisponiveis.find(s => s.id === servico.id || s.nome === servico.nome);
+                        duracaoAgendamento += servicoCompleto?.duracao || 60;
+                    });
+                } else if (agendamento.pacoteInfo && agendamento.pacoteInfo.duracaoTotal) {
+                    duracaoAgendamento = agendamento.pacoteInfo.duracaoTotal;
+                } else if (agendamento.duracaoTotal) {
+                    duracaoAgendamento = agendamento.duracaoTotal;
+                }
+                
+                horariosOcupados.push({
+                    horario: agendamento.horario,
+                    duracaoTotal: duracaoAgendamento
+                });
+            }
         }
         
-        snapshot1.forEach(doc => {
-            const agendamento = doc.data();
-            const agendamentoId = doc.id;
-            if (isHorarioOcupado(agendamento, agendamentoId) && agendamento.horario) {
-                ocupados.add(agendamento.horario);
-            }
-        });
+        snapshot1.forEach(doc => processarAgendamento(doc.data(), doc.id));
+        snapshot2.forEach(doc => processarAgendamento(doc.data(), doc.id));
         
-        snapshot2.forEach(doc => {
-            const agendamento = doc.data();
-            const agendamentoId = doc.id;
-            if (isHorarioOcupado(agendamento, agendamentoId) && agendamento.horario) {
-                ocupados.add(agendamento.horario);
-            }
-        });
+        // Buscar bloqueios
+        const bloqueios = await buscarBloqueios(data, profissionalId);
+        const temBloqueioDiaInteiro = bloqueios.some(b => b.tipo === "dia" || b.tipo === "periodo");
         
-        renderizarHorarios(Array.from(ocupados), infoAtendimento);
+        if (temBloqueioDiaInteiro) {
+            const motivoBloqueio = bloqueios.find(b => b.tipo === "dia" || b.tipo === "periodo")?.motivo || "Estabelecimento fechado";
+            horariosDiv.innerHTML = `
+                <div class="aviso-campos erro">
+                    <i class="fa-solid fa-store-slash"></i>
+                    <p><strong>⚠️ Estabelecimento fechado neste dia</strong></p>
+                    <p style="font-size: 0.8rem; margin-top: 8px;">${motivoBloqueio}</p>
+                </div>
+            `;
+            return;
+        }
+        
+        // Verificar horários bloqueados específicos
+        const horariosBloqueados = new Set();
+        for (const bloqueio of bloqueios) {
+            if (bloqueio.tipo === "horario" && bloqueio.horario) {
+                horariosBloqueados.add(bloqueio.horario);
+            }
+        }
+        
+        const limiteMinutos = horarioParaMinutos(HORARIO_LIMITE);
+        const horariosDisponiveis = [];
+        const horariosIndisponiveis = [];
+        
+        for (const horario of infoAtendimento.horarios) {
+            if (horariosBloqueados.has(horario)) {
+                horariosIndisponiveis.push(horario);
+                continue;
+            }
+            
+            const inicioMinutos = horarioParaMinutos(horario);
+            const fimMinutos = inicioMinutos + duracaoTotal;
+            
+            // Verificar se ultrapassa o horário limite
+            if (fimMinutos > limiteMinutos) {
+                horariosIndisponiveis.push(horario);
+                continue;
+            }
+            
+            // Verificar conflito com horários ocupados
+            let conflito = false;
+            for (const ocupado of horariosOcupados) {
+                const ocupadoInicio = horarioParaMinutos(ocupado.horario);
+                const ocupadoFim = ocupadoInicio + (ocupado.duracaoTotal || 60);
+                
+                if (inicioMinutos < ocupadoFim && fimMinutos > ocupadoInicio) {
+                    conflito = true;
+                    break;
+                }
+            }
+            
+            if (conflito) {
+                horariosIndisponiveis.push(horario);
+            } else {
+                horariosDisponiveis.push(horario);
+            }
+        }
+        
+        renderizarHorarios(horariosDisponiveis, horariosIndisponiveis, infoAtendimento, duracaoTotal);
         
     } catch (error) {
         console.error("Erro ao buscar horários:", error);
@@ -1103,48 +1296,65 @@ async function atualizarHorarios() {
     }
 }
 
-function renderizarHorarios(ocupados = [], infoAtendimento) {
+function renderizarHorarios(horariosDisponiveis = [], horariosIndisponiveis = [], infoAtendimento, duracaoTotal) {
     const nomeDia = getNomeDiaSemana(dataInput.value);
-    const horariosDoDia = infoAtendimento.horarios;
     
     horariosDiv.innerHTML = '';
+    
+    const duracaoFormatada = `${Math.floor(duracaoTotal / 60)}h ${duracaoTotal % 60}min`;
+    
     const infoHeader = document.createElement('div');
     infoHeader.style.cssText = `background:#e8f4fd;padding:14px 16px;border-radius:16px;margin-bottom:20px;text-align:center;border-left:4px solid #2199EF;`;
     infoHeader.innerHTML = `
         <div>
             <h3 style="margin:0;color:#2199EF;">Horários Disponíveis - ${nomeDia}</h3>
             <p style="margin:5px 0 0;font-size:0.75rem;color:#475569;">${infoAtendimento.mensagem}</p>
+            <p style="margin:5px 0 0;font-size:0.7rem;color:#10b981;">
+                <i class="fa-regular fa-clock"></i> Duração total: ${duracaoFormatada}
+            </p>
         </div>
     `;
     horariosDiv.appendChild(infoHeader);
     
+    if (horariosDisponiveis.length === 0) {
+        const avisoDiv = document.createElement('div');
+        avisoDiv.className = 'aviso-campos';
+        avisoDiv.innerHTML = `
+            <i class="fa-solid fa-clock"></i>
+            <p>Nenhum horário disponível para esta data</p>
+            <p style="font-size: 0.7rem; margin-top: 8px;">Tente outra data ou horário</p>
+        `;
+        horariosDiv.appendChild(avisoDiv);
+        return;
+    }
+    
     const containerBotoes = document.createElement('div');
     containerBotoes.className = 'botoes-horarios';
     
-    horariosDoDia.forEach(hora => {
-        const isOcupado = ocupados.includes(hora);
+    horariosDisponiveis.forEach(hora => {
         const btn = document.createElement("button");
         btn.type = "button";
-        btn.className = `horario-btn ${isOcupado ? 'indisponivel' : ''}`;
-        btn.textContent = hora;
-        if (isOcupado) {
-            btn.disabled = true;
-            btn.title = "Horário indisponível";
-        } else {
-            btn.onclick = () => {
-                document.querySelectorAll(".horario-btn").forEach(b => b.classList.remove("selecionado"));
-                btn.classList.add("selecionado");
-                horarioHidden.value = hora;
-            };
-        }
+        btn.className = "horario-btn";
+        
+        // Calcular horário de término
+        const inicioMinutos = horarioParaMinutos(hora);
+        const fimMinutos = inicioMinutos + duracaoTotal;
+        const horarioFim = minutosParaHorario(fimMinutos);
+        
+        btn.textContent = `${hora} → ${horarioFim}`;
+        btn.onclick = () => {
+            document.querySelectorAll(".horario-btn").forEach(b => b.classList.remove("selecionado"));
+            btn.classList.add("selecionado");
+            horarioHidden.value = hora;
+        };
         containerBotoes.appendChild(btn);
     });
     horariosDiv.appendChild(containerBotoes);
     
-    if (ocupados.length > 0) {
+    if (horariosIndisponiveis.length > 0) {
         const infoOcupados = document.createElement('div');
         infoOcupados.style.cssText = `margin-top:16px;padding:8px 12px;background:#fef2e8;border-radius:12px;font-size:0.75rem;color:#c2410c;text-align:center;`;
-        infoOcupados.innerHTML = `<i class="fa-solid fa-clock"></i> Horários indisponíveis: ${ocupados.join(', ')}`;
+        infoOcupados.innerHTML = `<i class="fa-solid fa-clock"></i> Horários indisponíveis: ${horariosIndisponiveis.join(', ')}`;
         horariosDiv.appendChild(infoOcupados);
     }
 }
@@ -1205,7 +1415,7 @@ onAuthStateChanged(auth, async (user) => {
     }
 });
 
-// ==================== SUBMIT DO FORMULÁRIO ====================
+// ==================== SUBMIT DO FORMULÁRIO (COM VERIFICAÇÃO DE BLOQUEIO E DURAÇÃO) ====================
 if (form) {
     form.addEventListener("submit", async (e) => {
         e.preventDefault();
@@ -1225,6 +1435,19 @@ if (form) {
         console.log("  Telefone:", telefone);
         console.log("  Email:", email);
         
+        // Calcular duração total para validação
+        const duracaoTotal = calcularDuracaoTotal();
+        
+        // Verificar se horário está bloqueado antes de prosseguir
+        if (data && horario && profissionalId) {
+            const isBloqueado = await isHorarioBloqueado(data, horario, profissionalId);
+            if (isBloqueado) {
+                mostrarMensagem("❌ Este horário não está mais disponível. Por favor, selecione outro horário.", "erro");
+                await atualizarHorarios();
+                return;
+            }
+        }
+        
         let servicosLista = [];
         let valorTotal = 0;
         let pacoteInfo = null;
@@ -1238,6 +1461,7 @@ if (form) {
                 descontoPercentual: pacoteAtual.desconto,
                 descontoValor: pacoteAtual.precoOriginal - pacoteAtual.preco,
                 servicos: pacoteAtual.servicos || [],
+                duracaoTotal: pacoteAtual.duracaoTotal || duracaoTotal,
                 tipo: "pacote",
                 isPacote: true
             };
@@ -1249,10 +1473,12 @@ if (form) {
                     const selectedOption = select.options[select.selectedIndex];
                     const preco = parseFloat(selectedOption?.getAttribute('data-preco') || 0);
                     const servicoId = selectedOption?.getAttribute('data-id');
+                    const duracao = parseInt(selectedOption?.getAttribute('data-duracao') || 60);
                     servicosLista.push({ 
                         id: servicoId, 
                         nome: select.value, 
                         preco: preco,
+                        duracao: duracao,
                         tipo: "servico"
                     });
                     valorTotal += preco;
@@ -1269,6 +1495,11 @@ if (form) {
         if (!profissionalId) { mostrarMensagem("Selecione um barbeiro.", "erro"); return; }
         if (!data) { mostrarMensagem("Selecione uma data.", "erro"); return; }
         if (!horario) { mostrarMensagem("Selecione um horário.", "erro"); return; }
+        
+        // Calcular horário de término
+        const inicioMinutos = horarioParaMinutos(horario);
+        const fimMinutos = inicioMinutos + duracaoTotal;
+        const horarioFim = minutosParaHorario(fimMinutos);
         
         const submitBtn = form.querySelector('button[type="submit"]');
         submitBtn.disabled = true;
@@ -1298,7 +1529,9 @@ if (form) {
             valor: valorTotal, 
             valorTotal: valorTotal, 
             data, 
-            horario, 
+            horario,
+            horarioFim: horarioFim,
+            duracaoTotal: duracaoTotal,
             observacaoGeral: obsGeral,
             status: "aguardando_pagamento", 
             pagamentoStatus: "pendente",
@@ -1339,8 +1572,14 @@ if (form) {
 
 // ==================== EVENT LISTENERS ====================
 if (nomeInput) nomeInput.addEventListener('input', verificarCamposPreenchidos);
-if (profissionalSelect) profissionalSelect.addEventListener('change', verificarCamposPreenchidos);
-if (dataInput) dataInput.addEventListener('change', () => { horarioHidden.value = ''; verificarCamposPreenchidos(); });
+if (profissionalSelect) profissionalSelect.addEventListener('change', () => {
+    horarioHidden.value = '';
+    verificarCamposPreenchidos();
+});
+if (dataInput) dataInput.addEventListener('change', () => { 
+    horarioHidden.value = ''; 
+    verificarCamposPreenchidos(); 
+});
 
 // ==================== AUTO PREENCHIMENTO AO DIGITAR TELEFONE ====================
 if (telefoneInput) {
@@ -1366,8 +1605,15 @@ if (telefoneInput) {
     });
 }
 
+// Observador para mutação dos serviços
 if (servicosContainer && !pacoteAtual) {
-    const observer = new MutationObserver(() => { configurarEventosServicos(); verificarCamposPreenchidos(); });
+    const observer = new MutationObserver(() => { 
+        configurarEventosServicos(); 
+        verificarCamposPreenchidos();
+        if (verificarCamposPreenchidos()) {
+            atualizarHorarios();
+        }
+    });
     observer.observe(servicosContainer, { childList: true, subtree: true });
 }
 
@@ -1378,3 +1624,5 @@ calcularValorTotal();
 console.log("✅ agendamento.js carregado com sucesso!");
 console.log("📋 Horários Segunda à Quarta:", horariosSegundaQuarta);
 console.log("📋 Horários Quinta à Sábado:", horariosQuintaSabado);
+console.log("🔒 Sistema de bloqueios integrado!");
+console.log("⏱️ Sistema de duração de serviços integrado!");
