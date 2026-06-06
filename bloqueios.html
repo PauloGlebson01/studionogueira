@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes, viewport-fit=cover">
+    <meta name="theme-color" content="#2199EF">
+    <title>Gerenciar Bloqueios | Studio Nogueira</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="dashboard.css">
+    <link rel="stylesheet" href="bloqueios.css">
+    <link rel="icon" type="image/png" href="assets/barber.icon.png">
+</head>
+<body>
+
+    <!-- VERIFICAÇÃO DE AUTENTICAÇÃO DO ADMIN -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+        import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyCgarMuCZ4sT-VO_ldyQjyG5MB6mR6i8rU",
+            authDomain: "barbearia-softclick.firebaseapp.com",
+            projectId: "barbearia-softclick",
+            storageBucket: "barbearia-softclick.firebasestorage.app",
+            messagingSenderId: "1079307759020",
+            appId: "1:1079307759020:web:231e08fb89fcb6b1e51e09",
+            measurementId: "G-SKF0BNWEWK"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+
+        const isAdminSession = sessionStorage.getItem('admin_active') === 'true';
+        const adminSessionId = sessionStorage.getItem('admin_session_id');
+
+        if (!isAdminSession || !adminSessionId) {
+            window.location.href = 'login.html';
+        }
+
+        onAuthStateChanged(auth, (user) => {
+            if (!user) {
+                console.log("⚠️ Usuário Firebase não autenticado");
+            }
+        });
+    </script>
+
+    <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Abrir menu">
+        <i class="fa-solid fa-bars"></i>
+    </button>
+
+    <div class="mobile-overlay" id="mobileOverlay"></div>
+
+    <div class="wrapper">
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <img src="assets/studio-nogueira-index.jpg" alt="Logo" class="sidebar-logo">
+                <span class="brand-name">Studio Nogueira</span>
+                <button class="close-sidebar-btn" id="closeSidebarBtn" aria-label="Fechar menu">
+                    <i class="fa-solid fa-times"></i>
+                </button>
+            </div>
+
+            <nav class="sidebar-nav">
+                <ul>
+                    <li class="nav-item">
+                        <a href="dashboard.html"><i class="fa-solid fa-house"></i> <span>Dashboard</span></a>
+                    </li>
+                    <li class="nav-separator">Navegação</li>
+                    <li class="nav-item">
+                        <a href="agenda.html"><i class="fa-solid fa-calendar-days"></i> <span>Agenda</span></a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="clientes.html"><i class="fa-solid fa-users"></i> <span>Clientes</span></a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="servicos.html"><i class="fa-solid fa-cut"></i> <span>Serviços</span></a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="pacotes.html"><i class="fa-solid fa-gift"></i> <span>Pacotes</span></a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="estoque.html"><i class="fa-solid fa-box-archive"></i> <span>Produtos</span></a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="pagamentos.html"><i class="fa-solid fa-credit-card"></i> <span>Pagamentos</span></a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="equipes.html"><i class="fa-solid fa-people-group"></i> <span>Equipes</span></a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="anamnese.html"><i class="fa-solid fa-clipboard-list"></i> <span>Anamnese</span></a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="aniversariantes.html"><i class="fa-solid fa-gift"></i> <span>Aniversariantes</span></a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="avaliacoes-clientes.html"><i class="fa-solid fa-star"></i> <span>Avaliações</span></a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="comanda.html"><i class="fa-solid fa-receipt"></i> <span>Comanda</span></a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="fidelidade.html"><i class="fa-solid fa-star-of-life"></i> <span>Fidelidade</span></a>
+                    </li>
+                    <li class="nav-separator">Desempenho</li>
+                    <li class="nav-item">
+                        <a href="margens.html"><i class="fa-solid fa-chart-line"></i> <span>Margens</span></a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="comissoes.html"><i class="fa-solid fa-coins"></i> <span>Comissões</span></a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="metas.html"><i class="fa-solid fa-bullseye"></i> <span>Metas Profissionais</span></a>
+                    </li>
+                    <li class="nav-separator">Treinamentos</li>
+                    <li class="nav-item">
+                        <a href="cursos.html"><i class="fa-solid fa-graduation-cap"></i> <span>Cursos & Treinamentos</span></a>
+                    </li>
+                    <li class="nav-separator">Administração</li>
+                    <li class="nav-item">
+                        <a href="barbeiros.html"><i class="fa-solid fa-user-md"></i> <span>Barbeiros</span></a>
+                    </li>
+                    <li class="nav-item active">
+                        <a href="bloqueios.html"><i class="fa-solid fa-lock"></i> <span>Bloqueios</span></a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="exportacoes.html"><i class="fa-solid fa-chart-pie"></i> <span>Exportações</span></a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="configuracoes.html"><i class="fa-solid fa-gear"></i> <span>Configurações</span></a>
+                    </li>
+                </ul>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="user-profile">
+                    <div class="user-avatar">SN</div>
+                    <div class="user-info">
+                        <span class="user-name">Studio Nogueira</span>
+                        <span class="user-status">Online</span>
+                    </div>
+                    <button id="logout" class="btn-logout-icon" title="Sair">
+                        <i class="fa-solid fa-right-from-bracket"></i>
+                    </button>
+                </div>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            <header class="topbar">
+                <div class="topbar-left">
+                    <h1>🔒 Gerenciar Bloqueios</h1>
+                    <p>Controle dias e horários indisponíveis para agendamentos</p>
+                </div>
+            </header>
+
+            <div class="container-fluid">
+                <div class="bloqueios-container">
+                    <div class="bloqueios-header">
+                        <h2><i class="fa-solid fa-calendar-times"></i> Bloqueios de Agenda</h2>
+                        <button class="btn-bloqueio" id="btnNovoBloqueio">
+                            <i class="fa-solid fa-plus"></i> Novo Bloqueio
+                        </button>
+                    </div>
+
+                    <div class="tabs">
+                        <button class="tab-btn active" data-tab="ativos">📋 Bloqueios Ativos</button>
+                        <button class="tab-btn" data-tab="historico">📅 Histórico</button>
+                    </div>
+
+                    <div id="tab-ativos" class="tab-pane active">
+                        <div class="filter-bar">
+                            <input type="text" id="filtroBusca" placeholder="🔍 Buscar por data, motivo ou tipo...">
+                            <select id="filtroTipo">
+                                <option value="">Todos os tipos</option>
+                                <option value="dia">Dia Inteiro</option>
+                                <option value="periodo">Período</option>
+                                <option value="horario">Horário Específico</option>
+                            </select>
+                        </div>
+                        <div id="bloqueiosAtivos" class="bloqueios-list">
+                            <div class="empty-state">
+                                <i class="fa-solid fa-spinner fa-spin"></i>
+                                <p>Carregando bloqueios...</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="tab-historico" class="tab-pane">
+                        <div id="bloqueiosHistorico" class="bloqueios-list">
+                            <div class="empty-state">
+                                <i class="fa-solid fa-spinner fa-spin"></i>
+                                <p>Carregando histórico...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- MODAL DE CRIAÇÃO -->
+    <div id="modalBloqueio" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-lock"></i> <span id="modalTitle">Novo Bloqueio</span></h3>
+                <button class="modal-close" onclick="closeModal()"><i class="fa-solid fa-times"></i></button>
+            </div>
+            <form id="formBloqueio">
+                <div class="modal-body">
+                    <input type="hidden" id="bloqueioId">
+                    
+                    <div class="form-group">
+                        <label><i class="fa-solid fa-tag"></i> Tipo de Bloqueio</label>
+                        <select id="tipoBloqueio" required>
+                            <option value="dia">Dia Inteiro</option>
+                            <option value="periodo">Período (vários dias)</option>
+                            <option value="horario">Horário Específico</option>
+                        </select>
+                    </div>
+
+                    <div id="camposDia">
+                        <div class="form-group">
+                            <label><i class="fa-solid fa-calendar-day"></i> Data</label>
+                            <input type="date" id="dataBloqueio">
+                        </div>
+                    </div>
+
+                    <div id="camposPeriodo" style="display: none;">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label><i class="fa-solid fa-calendar-start"></i> Data Início</label>
+                                <input type="date" id="dataInicioBloqueio">
+                            </div>
+                            <div class="form-group">
+                                <label><i class="fa-solid fa-calendar-end"></i> Data Fim</label>
+                                <input type="date" id="dataFimBloqueio">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="camposHorario" style="display: none;">
+                        <div class="form-group">
+                            <label><i class="fa-solid fa-calendar-day"></i> Data</label>
+                            <input type="date" id="dataHorarioBloqueio">
+                        </div>
+                        <div class="form-group">
+                            <label><i class="fa-solid fa-clock"></i> Horários</label>
+                            <div id="horariosMultiplos" class="horarios-checkboxes"></div>
+                            <small style="color: var(--text-muted); font-size: 0.7rem; display: block; margin-top: 6px;">
+                                Selecione um ou mais horários para bloquear
+                            </small>
+                        </div>
+                        <div class="form-group">
+                            <label><i class="fa-solid fa-user-nurse"></i> Barbeiro (opcional)</label>
+                            <select id="profissionalBloqueio">
+                                <option value="">Todos os barbeiros</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label><i class="fa-solid fa-note-sticky"></i> Motivo (opcional)</label>
+                        <textarea id="motivoBloqueio" rows="2" placeholder="Ex: Feriado, Manutenção, Fechamento extraordinário..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-bloqueio btn-bloqueio-secondary" onclick="closeModal()">Cancelar</button>
+                    <button type="submit" class="btn-bloqueio">Salvar Bloqueio</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="notificacao" class="notification" style="display:none;">
+        <i class="fa-solid fa-bell"></i>
+        <span></span>
+    </div>
+
+    <script type="module" src="bloqueios.js"></script>
+    <script>
+        // Funções globais para o modal
+        function closeModal() {
+            const modal = document.getElementById('modalBloqueio');
+            if (modal) modal.classList.remove('active');
+            const form = document.getElementById('formBloqueio');
+            if (form) form.reset();
+            const bloqueioId = document.getElementById('bloqueioId');
+            if (bloqueioId) bloqueioId.value = '';
+        }
+
+        function openModal() {
+            const modal = document.getElementById('modalBloqueio');
+            if (modal) modal.classList.add('active');
+        }
+
+        // Mobile menu
+        (function() {
+            const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+            const closeSidebarBtn = document.getElementById('closeSidebarBtn');
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('mobileOverlay');
+
+            if (mobileMenuBtn && sidebar) {
+                function openMenu() {
+                    sidebar.classList.add('mobile-open');
+                    if (overlay) overlay.classList.add('active');
+                    document.body.style.overflow = 'hidden';
+                }
+
+                function closeMenu() {
+                    sidebar.classList.remove('mobile-open');
+                    if (overlay) overlay.classList.remove('active');
+                    document.body.style.overflow = '';
+                }
+
+                mobileMenuBtn.addEventListener('click', openMenu);
+                if (closeSidebarBtn) closeSidebarBtn.addEventListener('click', closeMenu);
+                if (overlay) overlay.addEventListener('click', closeMenu);
+
+                document.querySelectorAll('.sidebar-nav a').forEach(link => {
+                    link.addEventListener('click', closeMenu);
+                });
+
+                window.addEventListener('resize', function() {
+                    if (window.innerWidth > 768) closeMenu();
+                });
+            }
+        })();
+    </script>
+</body>
+</html>
