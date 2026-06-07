@@ -1,6 +1,6 @@
-// agendamento.js - Versão com VERIFICAÇÃO DE BLOQUEIOS E DURAÇÃO DE SERVIÇOS
-// Ao digitar o telefone, busca automaticamente os dados do cliente se já existir
-// Os horários são calculados dinamicamente com base na duração dos serviços
+// agendamento.js - Versão CORRIGIDA DEFINITIVA
+// CORREÇÃO: TODO agendamento existente bloqueia o horário para evitar dupla reserva
+// Independente do status (confirmado, concluido, cancelado, etc)
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { 
@@ -22,7 +22,8 @@ import {
     onAuthStateChanged 
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
-//CONFIGURAÇÕES DE DADOS
+// CONFIGURAÇÕES DE DADOS
+
 const firebaseConfig = {
     apiKey: "AIzaSyC5xXm9T2nzh6xxZ5-zrMHfCNdqQOG8SZI",
     authDomain: "studio-nogueira-e07bb.firebaseapp.com",
@@ -55,44 +56,38 @@ const btnAdicionarServico = document.getElementById("btnAdicionarServico");
 const valorTotalServicosSpan = document.getElementById("valorTotalServicos");
 
 // ==================== HORÁRIOS POR DIA DA SEMANA ====================
-// Horários de SEGUNDA a QUARTA (conforme imagem: 08:20, 09:00, 09:40...)
 const horariosSegundaQuarta = [
     "08:20", "09:00", "09:40", "10:20", "11:00", "11:40",
     "14:00", "14:40", "15:20", "16:00", "16:40", "17:20", "18:00"
 ];
 
-// Horários de QUINTA a SÁBADO (conforme imagem: 08:00, 08:40, 09:20...)
 const horariosQuintaSabado = [
     "08:00", "08:40", "09:20", "10:00", "10:40", "11:20",
     "14:00", "14:40", "15:20", "16:00", "16:40", "17:20", "18:00", "18:40"
 ];
 
-// Horário limite de fechamento (20:00)
 const HORARIO_LIMITE = "20:00";
 
 let camposPreenchidos = { nome: false, telefone: false, profissional: false, data: false, servicos: false };
 let usuarioAutenticado = false;
 let servicosDisponiveis = [];
 let pacoteAtual = null;
-let bloqueiosCache = new Map(); // Cache de bloqueios para evitar múltiplas requisições
+let bloqueiosCache = new Map();
 
 // ==================== FUNÇÕES DE UTILIDADE ====================
 
-// Converter horário (string) para minutos do dia
 function horarioParaMinutos(horario) {
     if (!horario) return 0;
     const [horas, minutos] = horario.split(':').map(Number);
     return horas * 60 + minutos;
 }
 
-// Converter minutos para horário (string)
 function minutosParaHorario(minutos) {
     const horas = Math.floor(minutos / 60);
     const mins = minutos % 60;
     return `${String(horas).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
 }
 
-// Calcular duração total dos serviços selecionados
 function calcularDuracaoTotal() {
     if (pacoteAtual && pacoteAtual.duracaoTotal) {
         return pacoteAtual.duracaoTotal;
@@ -107,16 +102,14 @@ function calcularDuracaoTotal() {
             duracaoTotal += servico.duracao;
         }
     });
-    return duracaoTotal > 0 ? duracaoTotal : 60; // mínimo 60 minutos
+    return duracaoTotal > 0 ? duracaoTotal : 60;
 }
 
-// ==================== FUNÇÃO PARA NORMALIZAR TEXTOS ====================
 function normalizarTexto(texto) {
     if (!texto) return '';
     return texto.toLowerCase().normalize('NFD').replace(/[\u0300-\u0301]/g, '').trim();
 }
 
-// ==================== FUNÇÃO PARA FORMATAR TELEFONE ====================
 function formatarTelefone(valor) {
     let v = valor.replace(/\D/g, "");
     if (v.length > 11) v = v.slice(0, 11);
@@ -219,7 +212,6 @@ async function buscarBloqueios(data, profissionalId = null) {
     }
 }
 
-// ==================== FUNÇÃO PARA VERIFICAR SE HORÁRIO ESTÁ BLOQUEADO ====================
 async function isHorarioBloqueado(data, horario, profissionalId) {
     const bloqueios = await buscarBloqueios(data, profissionalId);
     
@@ -324,7 +316,6 @@ async function autoPreencherDadosCliente() {
     }
 }
 
-// ==================== FUNÇÃO PARA APLICAR DESCONTO DE ANIVERSÁRIO ====================
 function aplicarDescontoAniversario() {
     if (!pacoteAtual) {
         let totalAtual = 0;
@@ -351,7 +342,6 @@ function aplicarDescontoAniversario() {
     }
 }
 
-// ==================== FUNÇÃO PARA BUSCAR TODOS OS AGENDAMENTOS DO CLIENTE ====================
 async function buscarAgendamentosCliente(telefone) {
     if (!telefone) return [];
     
@@ -380,7 +370,6 @@ async function buscarAgendamentosCliente(telefone) {
     }
 }
 
-// ==================== FUNÇÃO PARA MOSTRAR HISTÓRICO DO CLIENTE ====================
 async function mostrarHistoricoCliente() {
     const telefone = telefoneInput?.value || "";
     const telefoneNumerico = telefone.replace(/\D/g, "");
@@ -447,7 +436,6 @@ async function mostrarHistoricoCliente() {
     historicoDiv.style.display = 'block';
 }
 
-// ==================== FUNÇÃO PARA REMOVER HISTÓRICO ====================
 function removerHistoricoCliente() {
     const historicoDiv = document.getElementById('historicoCliente');
     if (historicoDiv) {
@@ -576,7 +564,6 @@ function getUrlParams() {
     };
 }
 
-// ==================== BUSCAR DADOS COMPLETOS DO PACOTE ====================
 async function buscarPacoteCompleto(pacoteNome, pacoteId) {
     try {
         if (pacoteId) {
@@ -602,7 +589,6 @@ async function buscarPacoteCompleto(pacoteNome, pacoteId) {
     }
 }
 
-// ==================== PROCESSAR PACOTE DA URL ====================
 async function processarPacoteUrl() {
     const params = getUrlParams();
     const pacoteNome = params.pacoteNome;
@@ -709,7 +695,6 @@ async function processarPacoteUrl() {
     return false;
 }
 
-// ==================== PROCESSAR PARÂMETROS DE PROFISSIONAL ====================
 function processarParametrosProfissional() {
     const params = getUrlParams();
     
@@ -772,7 +757,6 @@ async function carregarServicosFirebase() {
     }
 }
 
-// ==================== CARREGAR PROFISSIONAIS ====================
 async function carregarProfissionais() {
     if (!profissionalSelect) return;
     
@@ -941,7 +925,7 @@ function configurarEventosServicos() {
     });
 }
 
-// ==================== FUNÇÃO DE CLIENTE (COM AUTO PREENCHIMENTO) ====================
+// ==================== FUNÇÃO DE CLIENTE ====================
 async function salvarOuAtualizarCliente(dadosCliente) {
     try {
         const { nome, telefone, email, dataNascimento } = dadosCliente;
@@ -1063,7 +1047,6 @@ function getNomeDiaSemana(dataStr) {
     return dias[getDiaSemana(dataStr)];
 }
 
-// Função para obter horários baseado no dia da semana
 function getHorariosPorDia(dataStr) {
     const diaSemana = getDiaSemana(dataStr);
     
@@ -1150,22 +1133,34 @@ function configurarDataMinima() {
     dataInput.min = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
 }
 
-// ==================== ATUALIZAR HORÁRIOS (COM VERIFICAÇÃO DE DURAÇÃO E BLOQUEIOS) ====================
+// ==================== ATUALIZAR HORÁRIOS (VERSÃO CORRIGIDA DEFINITIVA) ====================
+// CORREÇÃO: TODO agendamento existente bloqueia o horário para evitar dupla reserva
 async function atualizarHorarios() {
     const data = dataInput.value;
     const profissionalId = profissionalSelect?.value;
     const profissionalNome = profissionalSelect?.options[profissionalSelect.selectedIndex]?.getAttribute('data-nome');
     
-    if (!data || !profissionalId) return;
+    console.log("=== INICIANDO VERIFICAÇÃO DE HORÁRIOS ===");
+    console.log(`📅 Data: ${data}`);
+    console.log(`👨‍🦱 Profissional ID: ${profissionalId}`);
+    console.log(`👨‍🦱 Profissional Nome: ${profissionalNome}`);
     
-    // Calcular duração total dos serviços selecionados
+    if (!data || !profissionalId) {
+        console.log("❌ Data ou profissional não selecionado");
+        return;
+    }
+    
     const duracaoTotal = calcularDuracaoTotal();
+    console.log(`⏱️ Duração total do serviço: ${duracaoTotal} minutos`);
+    
     if (duracaoTotal === 0) {
         horariosDiv.innerHTML = `<div class="aviso-campos"><i class="fa-solid fa-clock"></i><p>Selecione os serviços primeiro</p></div>`;
         return;
     }
     
     const infoAtendimento = getInfoAtendimentoPorDia(data);
+    console.log(`📋 Info do dia:`, infoAtendimento);
+    
     if (!infoAtendimento.temAtendimento) {
         horariosDiv.innerHTML = `<div class="aviso-campos"><i class="fa-solid fa-calendar-xmark"></i><p>${infoAtendimento.mensagem}</p></div>`;
         return;
@@ -1174,60 +1169,89 @@ async function atualizarHorarios() {
     horariosDiv.innerHTML = '<div class="loading-horarios"><i class="fas fa-spinner fa-spin"></i> Verificando horários disponíveis...</div>';
     
     try {
-        // Buscar agendamentos existentes
+        // Buscar TODOS os agendamentos do dia para este profissional
         const agendamentosRef = collection(db, "agendamentos");
-        const q1 = query(agendamentosRef, where("data", "==", data), where("profissionalId", "==", profissionalId));
-        const q2 = query(agendamentosRef, where("data", "==", data), where("profissional", "==", profissionalNome));
         
-        const [snapshot1, snapshot2] = await Promise.all([getDocs(q1), getDocs(q2)]);
+        // Criar múltiplas queries para garantir que encontramos todos
+        const queries = [];
         
-        // Buscar comandas finalizadas
-        const comandasRef = collection(db, "comandas");
-        const comandasQuery = query(comandasRef, where("status", "==", "finalizada"));
-        const comandasSnapshot = await getDocs(comandasQuery);
+        // Query por profissionalId
+        if (profissionalId) {
+            queries.push(query(agendamentosRef, where("data", "==", data), where("profissionalId", "==", profissionalId)));
+        }
         
-        const agendamentosFinalizados = new Set();
-        comandasSnapshot.forEach(doc => {
-            const comanda = doc.data();
-            if (comanda.agendamentoId) {
-                agendamentosFinalizados.add(comanda.agendamentoId);
-            }
-        });
+        // Query por profissional (nome)
+        if (profissionalNome) {
+            queries.push(query(agendamentosRef, where("data", "==", data), where("profissional", "==", profissionalNome)));
+        }
         
-        // Coletar horários ocupados com duração
+        // Query por profissionalId como string (caso esteja como string)
+        if (profissionalId) {
+            queries.push(query(agendamentosRef, where("data", "==", data), where("profissionalId", "==", String(profissionalId))));
+        }
+        
+        const todosAgendamentos = [];
+        
+        for (const q of queries) {
+            const snapshot = await getDocs(q);
+            console.log(`📊 Query retornou ${snapshot.size} resultados`);
+            
+            snapshot.forEach(doc => {
+                const agendamento = { id: doc.id, ...doc.data() };
+                // Evitar duplicatas
+                if (!todosAgendamentos.find(a => a.id === agendamento.id)) {
+                    todosAgendamentos.push(agendamento);
+                }
+            });
+        }
+        
+        console.log(`📊 TOTAL de agendamentos únicos encontrados: ${todosAgendamentos.length}`);
+        
+        // IMPORTANTE: TODO agendamento existente bloqueia o horário
+        // Independente do status, pois se já teve um atendimento naquele horário,
+        // não pode ser agendado novamente (evita dupla reserva)
         const horariosOcupados = [];
         
-        function processarAgendamento(agendamento, agendamentoId) {
-            const status = agendamento.status;
-            if ((status === 'confirmado' || status === 'aguardando_pagamento' || status === 'finalizado') && 
-                !agendamentosFinalizados.has(agendamentoId) && agendamento.horario) {
+        for (const agendamento of todosAgendamentos) {
+            const horario = agendamento.horario;
+            const horarioFim = agendamento.horarioFim;
+            
+            console.log(`\n--- Agendamento encontrado ---`);
+            console.log(`  ID: ${agendamento.id}`);
+            console.log(`  Status: ${agendamento.status}`);
+            console.log(`  Horário: ${horario}`);
+            console.log(`  Horário Fim: ${horarioFim}`);
+            console.log(`  Cliente: ${agendamento.cliente || agendamento.nome}`);
+            
+            if (horario) {
+                let duracaoAgendamento = agendamento.duracaoTotal || 60;
                 
-                let duracaoAgendamento = 60; // padrão 60 minutos
-                
-                // Calcular duração baseada nos serviços do agendamento
-                if (agendamento.servicos && Array.isArray(agendamento.servicos) && agendamento.servicos.length > 0) {
+                // Calcular duração baseada nos serviços se disponível
+                if (agendamento.servicos && agendamento.servicos.length > 0 && !agendamento.duracaoTotal) {
                     duracaoAgendamento = 0;
                     agendamento.servicos.forEach(servico => {
                         const servicoCompleto = servicosDisponiveis.find(s => s.id === servico.id || s.nome === servico.nome);
                         duracaoAgendamento += servicoCompleto?.duracao || 60;
                     });
-                } else if (agendamento.pacoteInfo && agendamento.pacoteInfo.duracaoTotal) {
-                    duracaoAgendamento = agendamento.pacoteInfo.duracaoTotal;
-                } else if (agendamento.duracaoTotal) {
-                    duracaoAgendamento = agendamento.duracaoTotal;
                 }
                 
                 horariosOcupados.push({
-                    horario: agendamento.horario,
-                    duracaoTotal: duracaoAgendamento
+                    horario: horario,
+                    duracaoTotal: duracaoAgendamento,
+                    status: agendamento.status,
+                    id: agendamento.id,
+                    horarioFim: horarioFim
                 });
+                
+                console.log(`  🔒 BLOQUEANDO - Horário ${horario} está OCUPADO (status: ${agendamento.status})`);
+            } else {
+                console.log(`  ⚠️ Agendamento sem horário definido`);
             }
         }
         
-        snapshot1.forEach(doc => processarAgendamento(doc.data(), doc.id));
-        snapshot2.forEach(doc => processarAgendamento(doc.data(), doc.id));
+        console.log(`\n📊 Total de horários ocupados que BLOQUEIAM: ${horariosOcupados.length}`);
         
-        // Buscar bloqueios
+        // Buscar bloqueios manuais
         const bloqueios = await buscarBloqueios(data, profissionalId);
         const temBloqueioDiaInteiro = bloqueios.some(b => b.tipo === "dia" || b.tipo === "periodo");
         
@@ -1243,11 +1267,11 @@ async function atualizarHorarios() {
             return;
         }
         
-        // Verificar horários bloqueados específicos
-        const horariosBloqueados = new Set();
+        // Horários bloqueados manualmente
+        const horariosBloqueadosManualmente = new Set();
         for (const bloqueio of bloqueios) {
             if (bloqueio.tipo === "horario" && bloqueio.horario) {
-                horariosBloqueados.add(bloqueio.horario);
+                horariosBloqueadosManualmente.add(bloqueio.horario);
             }
         }
         
@@ -1255,45 +1279,63 @@ async function atualizarHorarios() {
         const horariosDisponiveis = [];
         const horariosIndisponiveis = [];
         
-        for (const horario of infoAtendimento.horarios) {
-            if (horariosBloqueados.has(horario)) {
-                horariosIndisponiveis.push(horario);
+        console.log(`\n📋 Verificando cada horário da lista (${infoAtendimento.horarios.length} horários totais)...`);
+        
+        for (const horarioBase of infoAtendimento.horarios) {
+            console.log(`\n--- Verificando horário: ${horarioBase} ---`);
+            
+            // Verificar bloqueio manual
+            if (horariosBloqueadosManualmente.has(horarioBase)) {
+                horariosIndisponiveis.push(horarioBase);
+                console.log(`  ⚠️ INDISPONÍVEL (bloqueio manual)`);
                 continue;
             }
             
-            const inicioMinutos = horarioParaMinutos(horario);
+            const inicioMinutos = horarioParaMinutos(horarioBase);
             const fimMinutos = inicioMinutos + duracaoTotal;
             
             // Verificar se ultrapassa o horário limite
             if (fimMinutos > limiteMinutos) {
-                horariosIndisponiveis.push(horario);
+                horariosIndisponiveis.push(horarioBase);
+                console.log(`  ⚠️ INDISPONÍVEL (ultrapassa limite ${HORARIO_LIMITE})`);
                 continue;
             }
             
             // Verificar conflito com horários ocupados
             let conflito = false;
+            let motivoConflito = "";
+            
             for (const ocupado of horariosOcupados) {
                 const ocupadoInicio = horarioParaMinutos(ocupado.horario);
                 const ocupadoFim = ocupadoInicio + (ocupado.duracaoTotal || 60);
                 
                 if (inicioMinutos < ocupadoFim && fimMinutos > ocupadoInicio) {
                     conflito = true;
+                    motivoConflito = `Conflito com ${ocupado.horario} (${ocupado.status})`;
+                    console.log(`  ⚠️ INDISPONÍVEL - ${motivoConflito}`);
+                    console.log(`     Seu horário: ${horarioBase} (${inicioMinutos}min - ${fimMinutos}min)`);
+                    console.log(`     Ocupado: ${ocupado.horario} (${ocupadoInicio}min - ${ocupadoFim}min)`);
                     break;
                 }
             }
             
             if (conflito) {
-                horariosIndisponiveis.push(horario);
+                horariosIndisponiveis.push(horarioBase);
             } else {
-                horariosDisponiveis.push(horario);
+                horariosDisponiveis.push(horarioBase);
+                console.log(`  ✅ DISPONÍVEL`);
             }
         }
+        
+        console.log(`\n📊 RESULTADO FINAL:`);
+        console.log(`   ✅ Disponíveis: ${horariosDisponiveis.length}`);
+        console.log(`   ❌ Indisponíveis: ${horariosIndisponiveis.length}`);
         
         renderizarHorarios(horariosDisponiveis, horariosIndisponiveis, infoAtendimento, duracaoTotal);
         
     } catch (error) {
-        console.error("Erro ao buscar horários:", error);
-        horariosDiv.innerHTML = `<div class="aviso-campos erro"><i class="fa-solid fa-circle-exclamation"></i><p>Erro ao carregar horários</p></div>`;
+        console.error("❌ Erro ao buscar horários:", error);
+        horariosDiv.innerHTML = `<div class="aviso-campos erro"><i class="fa-solid fa-circle-exclamation"></i><p>Erro ao carregar horários: ${error.message}</p></div>`;
     }
 }
 
@@ -1324,6 +1366,7 @@ function renderizarHorarios(horariosDisponiveis = [], horariosIndisponiveis = []
             <i class="fa-solid fa-clock"></i>
             <p>Nenhum horário disponível para esta data</p>
             <p style="font-size: 0.7rem; margin-top: 8px;">Tente outra data ou horário</p>
+            ${horariosIndisponiveis.length > 0 ? `<p style="font-size: 0.65rem; margin-top: 8px; color:#c2410c;">Horários ocupados: ${horariosIndisponiveis.join(', ')}</p>` : ''}
         `;
         horariosDiv.appendChild(avisoDiv);
         return;
@@ -1337,7 +1380,6 @@ function renderizarHorarios(horariosDisponiveis = [], horariosIndisponiveis = []
         btn.type = "button";
         btn.className = "horario-btn";
         
-        // Calcular horário de término
         const inicioMinutos = horarioParaMinutos(hora);
         const fimMinutos = inicioMinutos + duracaoTotal;
         const horarioFim = minutosParaHorario(fimMinutos);
@@ -1416,7 +1458,7 @@ onAuthStateChanged(auth, async (user) => {
     }
 });
 
-// ==================== SUBMIT DO FORMULÁRIO (COM VERIFICAÇÃO DE BLOQUEIO E DURAÇÃO) ====================
+// ==================== SUBMIT DO FORMULÁRIO ====================
 if (form) {
     form.addEventListener("submit", async (e) => {
         e.preventDefault();
@@ -1434,13 +1476,30 @@ if (form) {
         console.log("📝 Dados do formulário:");
         console.log("  Nome:", nome);
         console.log("  Telefone:", telefone);
-        console.log("  Email:", email);
+        console.log("  Data:", data);
+        console.log("  Horário:", horario);
         
-        // Calcular duração total para validação
         const duracaoTotal = calcularDuracaoTotal();
         
         // Verificar se horário está bloqueado antes de prosseguir
         if (data && horario && profissionalId) {
+            // Verificar se já existe um agendamento neste horário
+            const agendamentosRef = collection(db, "agendamentos");
+            const q = query(
+                agendamentosRef, 
+                where("data", "==", data), 
+                where("horario", "==", horario),
+                where("profissionalId", "==", profissionalId)
+            );
+            const existingSnap = await getDocs(q);
+            
+            if (!existingSnap.empty) {
+                mostrarMensagem("❌ Este horário não está mais disponível. Por favor, selecione outro horário.", "erro");
+                await atualizarHorarios();
+                return;
+            }
+            
+            // Verificar bloqueios manuais
             const isBloqueado = await isHorarioBloqueado(data, horario, profissionalId);
             if (isBloqueado) {
                 mostrarMensagem("❌ Este horário não está mais disponível. Por favor, selecione outro horário.", "erro");
@@ -1497,7 +1556,6 @@ if (form) {
         if (!data) { mostrarMensagem("Selecione uma data.", "erro"); return; }
         if (!horario) { mostrarMensagem("Selecione um horário.", "erro"); return; }
         
-        // Calcular horário de término
         const inicioMinutos = horarioParaMinutos(horario);
         const fimMinutos = inicioMinutos + duracaoTotal;
         const horarioFim = minutosParaHorario(fimMinutos);
@@ -1582,7 +1640,6 @@ if (dataInput) dataInput.addEventListener('change', () => {
     verificarCamposPreenchidos(); 
 });
 
-// ==================== AUTO PREENCHIMENTO AO DIGITAR TELEFONE ====================
 if (telefoneInput) {
     telefoneInput.addEventListener('input', (e) => {
         e.target.value = formatarTelefone(e.target.value);
@@ -1606,7 +1663,6 @@ if (telefoneInput) {
     });
 }
 
-// Observador para mutação dos serviços
 if (servicosContainer && !pacoteAtual) {
     const observer = new MutationObserver(() => { 
         configurarEventosServicos(); 
@@ -1627,3 +1683,5 @@ console.log("📋 Horários Segunda à Quarta:", horariosSegundaQuarta);
 console.log("📋 Horários Quinta à Sábado:", horariosQuintaSabado);
 console.log("🔒 Sistema de bloqueios integrado!");
 console.log("⏱️ Sistema de duração de serviços integrado!");
+console.log("🔓 CORREÇÃO DEFINITIVA: TODO agendamento existente BLOQUEIA o horário!");
+console.log("🔓 Isso evita dupla reserva e overbooking!");
