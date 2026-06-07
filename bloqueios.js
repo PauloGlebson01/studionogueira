@@ -15,14 +15,14 @@ import {
 import { getAuth, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 const firebaseConfig = {
-    apiKey: "AIzaSyCgarMuCZ4sT-VO_ldyQjyG5MB6mR6i8rU",
-    authDomain: "barbearia-softclick.firebaseapp.com",
-    projectId: "barbearia-softclick",
-    storageBucket: "barbearia-softclick.firebasestorage.app",
-    messagingSenderId: "1079307759020",
-    appId: "1:1079307759020:web:231e08fb89fcb6b1e51e09",
-    measurementId: "G-SKF0BNWEWK"
-};
+    apiKey: "AIzaSyC5xXm9T2nzh6xxZ5-zrMHfCNdqQOG8SZI",
+    authDomain: "studio-nogueira-e07bb.firebaseapp.com",
+    projectId: "studio-nogueira-e07bb",
+    storageBucket: "studio-nogueira-e07bb.firebasestorage.app",
+    messagingSenderId: "150077330983",
+    appId: "1:150077330983:web:a49838c4cde9df4e1de002",
+    measurementId: "G-WX477KDZQC"
+  };
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);

@@ -311,7 +311,7 @@ function carregarMovimentacoes() {
         }, (error) => {
             console.error("Erro no listener de movimentações:", error);
             if (movimentacoesBody) {
-                movimentacoesBody.innerHTML = `<td><td colspan="9" class="loading-movimentacoes">Erro ao carregar movimentações: ${error.message}</td></tr>`;
+                movimentacoesBody.innerHTML = `<tr><td colspan="9" class="loading-movimentacoes">Erro ao carregar movimentações: ${error.message}</td></tr>`;
             }
             const totalRegistros = document.getElementById('totalRegistros');
             if (totalRegistros) totalRegistros.textContent = '0 registros';
@@ -1126,6 +1126,72 @@ function fecharModalAtendimento() {
     if (modalAtendimentoCaixa) modalAtendimentoCaixa.classList.remove('active');
 }
 
+// ==================== FUNÇÃO AUXILIAR PARA PONTOS DE FIDELIDADE ====================
+
+async function adicionarPontosFidelidadeCliente(clienteId, clienteNome, valorTotal, tipo = "servico") {
+    try {
+        if (!clienteId) return false;
+        
+        const configDoc = await getDoc(doc(db, "configuracoes", "fidelidade"));
+        let config = { pontosPorRealServico: 1, pontosPorRealProduto: 0.5 };
+        if (configDoc.exists()) {
+            config = configDoc.data();
+        }
+        
+        let pontos = 0;
+        if (tipo === "servico") {
+            pontos = Math.floor(valorTotal * (config.pontosPorRealServico || 1));
+        } else {
+            pontos = Math.floor(valorTotal * (config.pontosPorRealProduto || 0.5));
+        }
+        
+        if (pontos === 0) return false;
+        
+        const fidelidadeQuery = query(collection(db, "clientes_fidelidade"), where("clienteId", "==", clienteId));
+        const fidelidadeSnap = await getDocs(fidelidadeQuery);
+        
+        if (!fidelidadeSnap.empty) {
+            const fidelidadeDoc = fidelidadeSnap.docs[0];
+            const pontosAtuais = fidelidadeDoc.data().pontos || 0;
+            const pontosGanhos = fidelidadeDoc.data().pontosGanhos || 0;
+            
+            await updateDoc(doc(db, "clientes_fidelidade", fidelidadeDoc.id), {
+                pontos: pontosAtuais + pontos,
+                pontosGanhos: pontosGanhos + pontos,
+                ultimaCompra: Timestamp.now(),
+                updatedAt: Timestamp.now()
+            });
+        } else {
+            await addDoc(collection(db, "clientes_fidelidade"), {
+                clienteId: clienteId,
+                nome: clienteNome,
+                pontos: pontos,
+                pontosGanhos: pontos,
+                totalResgatados: 0,
+                createdAt: Timestamp.now(),
+                updatedAt: Timestamp.now()
+            });
+        }
+        
+        await addDoc(collection(db, "historico_pontos"), {
+            clienteId: clienteId,
+            clienteNome: clienteNome,
+            quantidade: pontos,
+            motivo: `Atendimento finalizado no caixa - ${formatarMoeda(valorTotal)}`,
+            data: Timestamp.now()
+        });
+        
+        console.log(`🎉 +${pontos} pontos de fidelidade adicionados para ${clienteNome}`);
+        return true;
+        
+    } catch (error) {
+        console.error("Erro ao adicionar pontos de fidelidade:", error);
+        return false;
+    }
+}
+
+// ==================== FUNÇÃO PRINCIPAL: FINALIZAR ATENDIMENTO (CORRIGIDA COM SINCRONIZAÇÃO) ====================
+
 async function finalizarAtendimento() {
     console.log("💾 Finalizando atendimento...");
     
@@ -1235,7 +1301,33 @@ async function finalizarAtendimento() {
     
     const cliente = clientes.find(c => c.id === clienteId);
     
+    // ========== VERIFICAR SE EXISTE UMA COMANDA ABERTA PARA ESTE CLIENTE ==========
+    let comandaExistente = null;
+    let agendamentoId = null;
+    
     try {
+        console.log("🔍 Verificando se existe comanda aberta para o cliente...");
+        
+        const comandasQuery = query(
+            collection(db, "comandas"),
+            where("clienteId", "==", clienteId),
+            where("status", "in", ["aberta", "em_andamento"])
+        );
+        const comandasSnapshot = await getDocs(comandasQuery);
+        
+        if (!comandasSnapshot.empty) {
+            comandaExistente = { id: comandasSnapshot.docs[0].id, ...comandasSnapshot.docs[0].data() };
+            agendamentoId = comandaExistente.agendamentoId;
+            console.log(`✅ Comanda encontrada: ${comandaExistente.id}, Agendamento ID: ${agendamentoId}`);
+        } else {
+            console.log("ℹ️ Nenhuma comanda aberta encontrada para este cliente");
+        }
+    } catch (error) {
+        console.error("Erro ao buscar comanda existente:", error);
+    }
+    
+    try {
+        // ========== SALVAR MOVIMENTAÇÃO NO CAIXA ==========
         const movData = {
             tipo: 'entrada',
             categoria: 'atendimento',
@@ -1255,11 +1347,136 @@ async function finalizarAtendimento() {
             updatedAt: Timestamp.now()
         };
         
-        console.log("💾 Salvando atendimento:", movData);
-        
+        console.log("💾 Salvando movimentação:", movData);
         await addDoc(collection(db, "movimentacoes_caixa"), movData);
         
+        // ========== ATUALIZAR COMANDA EXISTENTE (SE HOUVER) ==========
+        if (comandaExistente) {
+            console.log(`📝 Atualizando comanda existente: ${comandaExistente.id}`);
+            
+            const comandaUpdateData = {
+                servicos: servicosLista.map(s => ({
+                    servicoId: s.id,
+                    nome: s.nome,
+                    preco: s.preco,
+                    quantidade: s.quantidade,
+                    tipo: "servico"
+                })),
+                produtos: produtosLista.map(p => ({
+                    produtoId: p.id,
+                    nome: p.nome,
+                    preco: p.preco,
+                    quantidade: p.quantidade,
+                    isPreLancamento: false
+                })),
+                pacotes: pacotesLista.map(p => ({
+                    pacoteId: p.id,
+                    nome: p.nome,
+                    preco: p.preco,
+                    quantidade: p.quantidade,
+                    servicos: p.servicos
+                })),
+                subtotal: subtotal,
+                total: total,
+                desconto: descontoAplicadoInfo,
+                formaPagamento: formaPagamento,
+                parcelas: formaPagamento === 'cartao_credito' ? parcelas : 1,
+                observacoes: observacoes,
+                status: "finalizada",
+                dataFinalizacao: Timestamp.now(),
+                updatedAt: Timestamp.now()
+            };
+            
+            await updateDoc(doc(db, "comandas", comandaExistente.id), comandaUpdateData);
+            console.log(`✅ Comanda ${comandaExistente.id} atualizada para status "finalizada"`);
+            
+            // ========== SINCRONIZAR COM AGENDAMENTO ==========
+            if (agendamentoId) {
+                console.log(`🔄 Sincronizando com agendamento: ${agendamentoId}`);
+                
+                try {
+                    const agendamentoRef = doc(db, "agendamentos", agendamentoId);
+                    const agendamentoDoc = await getDoc(agendamentoRef);
+                    
+                    if (agendamentoDoc.exists()) {
+                        const agendamentoAtual = agendamentoDoc.data();
+                        
+                        if (agendamentoAtual.status === "confirmado" || agendamentoAtual.status === "aguardando_pagamento") {
+                            await updateDoc(agendamentoRef, {
+                                status: "concluido",
+                                dataConclusao: Timestamp.now(),
+                                atualizadoEm: Timestamp.now(),
+                                valorPago: total,
+                                formaPagamento: formaPagamento,
+                                parcelas: formaPagamento === 'cartao_credito' ? parcelas : 1
+                            });
+                            console.log(`✅ Agendamento ${agendamentoId} atualizado para status "concluido"`);
+                            
+                            // Disparar evento para atualizar a agenda
+                            const event = new CustomEvent('agendaAtualizada', { 
+                                detail: { 
+                                    timestamp: Date.now(), 
+                                    source: 'caixa.js',
+                                    action: 'finalizar_atendimento',
+                                    agendamentoId: agendamentoId
+                                } 
+                            });
+                            window.dispatchEvent(event);
+                            
+                            try {
+                                localStorage.setItem('agendaAtualizada', JSON.stringify({ 
+                                    timestamp: Date.now(), 
+                                    source: 'caixa.js',
+                                    agendamentoId: agendamentoId,
+                                    acao: 'finalizar'
+                                }));
+                                setTimeout(() => localStorage.removeItem('agendaAtualizada'), 500);
+                            } catch(e) {}
+                        } else {
+                            console.log(`⚠️ Agendamento ${agendamentoId} está com status "${agendamentoAtual.status}", não pode ser concluído`);
+                        }
+                    } else {
+                        console.log(`⚠️ Agendamento ${agendamentoId} não encontrado`);
+                    }
+                } catch (syncError) {
+                    console.error("❌ Erro ao sincronizar com agenda:", syncError);
+                }
+            } else {
+                console.log("ℹ️ Comanda não possui agendamento vinculado");
+            }
+            
+        } else {
+            console.log("ℹ️ Nenhuma comanda para atualizar, apenas movimentação de caixa salva");
+        }
+        
+        // ========== ADICIONAR PONTOS DE FIDELIDADE ==========
+        if (clienteId && total > 0) {
+            await adicionarPontosFidelidadeCliente(clienteId, cliente?.nome, total, "servico");
+        }
+        
+        // ========== ATUALIZAR ESTOQUE ==========
+        for (const produto of produtosLista) {
+            try {
+                const produtoRef = doc(db, "produtos", produto.id);
+                const produtoDoc = await getDoc(produtoRef);
+                if (produtoDoc.exists()) {
+                    const produtoData = produtoDoc.data();
+                    const novaQuantidade = Math.max(0, (produtoData.quantidade || 0) - (produto.quantidade || 1));
+                    await updateDoc(produtoRef, { quantidade: novaQuantidade, updatedAt: Timestamp.now() });
+                    console.log(`📦 Estoque atualizado: ${produto.nome} → ${novaQuantidade}`);
+                }
+            } catch (err) {
+                console.error(`Erro ao atualizar estoque para ${produto.nome}:`, err);
+            }
+        }
+        
         mostrarToast(`✅ Atendimento finalizado! Subtotal: ${formatarMoeda(subtotal)} | Total pago: ${formatarMoeda(total)}`, "success");
+        
+        if (comandaExistente && agendamentoId) {
+            mostrarToast(`🎉 Comanda finalizada e agendamento movido para REALIZADOS!`, "success");
+        } else if (comandaExistente) {
+            mostrarToast(`🎉 Comanda finalizada com sucesso!`, "success");
+        }
         
         resetarFormularioAtendimento();
         fecharModalAtendimento();
@@ -1297,7 +1514,6 @@ async function buscarComandaPorNumero(numero) {
         const comandaDoc = comandasSnapshot.docs[0];
         const comanda = { id: comandaDoc.id, ...comandaDoc.data() };
         
-        // Verificar se a comanda está aberta
         if (comanda.status !== "aberta") {
             mostrarToast(`Comanda #${numero} está ${comanda.status === "finalizada" ? "finalizada" : (comanda.status === "ausente" ? "ausente" : "cancelada")}. Não é possível carregá-la.`, "erro");
             return null;
@@ -1320,7 +1536,6 @@ function exibirInfoComanda(comanda) {
     const clienteNome = comanda.clienteNome || (clientes.find(c => c.id === comanda.clienteId)?.nome) || "Cliente não informado";
     const barbeiroNome = comanda.barbeiroNome || (profissionais.find(p => p.id === comanda.barbeiroId)?.nome) || "Não informado";
     
-    // Calcular total da comanda
     let total = 0;
     (comanda.servicos || []).forEach(s => total += (s.preco || 0) * (s.quantidade || 1));
     (comanda.pacotes || []).forEach(p => total += (p.preco || 0));
@@ -1394,13 +1609,9 @@ async function carregarItensDaComanda(comanda) {
         return;
     }
     
-    // Limpar formulário atual
     resetarFormularioAtendimento();
-    
-    // Aguardar um pouco para o reset ser concluído
     await new Promise(resolve => setTimeout(resolve, 100));
     
-    // ========== PREENCHER CLIENTE ==========
     const clienteSelect = document.getElementById("atendimentoCliente");
     if (clienteSelect && comanda.clienteId) {
         clienteSelect.value = comanda.clienteId;
@@ -1413,17 +1624,10 @@ async function carregarItensDaComanda(comanda) {
         }
     }
     
-    // ========== PREENCHER BARBEIRO ==========
     const profissionalSelect = document.getElementById("atendimentoProfissional");
-    console.log("🔍 Tentando preencher barbeiro...");
-    console.log("   - barbeiroId da comanda:", comanda.barbeiroId);
-    console.log("   - barbeiroNome da comanda:", comanda.barbeiroNome);
-    console.log("   - profissionais disponíveis:", profissionais.map(p => ({ id: p.id, nome: p.nome })));
-    
     if (profissionalSelect) {
         let barbeiroEncontrado = false;
         
-        // Tentar pelo ID
         if (comanda.barbeiroId) {
             profissionalSelect.value = comanda.barbeiroId;
             if (profissionalSelect.value === comanda.barbeiroId) {
@@ -1432,7 +1636,6 @@ async function carregarItensDaComanda(comanda) {
             }
         }
         
-        // Se não encontrou pelo ID, tentar pelo nome exato
         if (!barbeiroEncontrado && comanda.barbeiroNome) {
             const barbeiro = profissionais.find(p => 
                 p.nome && p.nome.toLowerCase() === comanda.barbeiroNome.toLowerCase()
@@ -1444,7 +1647,6 @@ async function carregarItensDaComanda(comanda) {
             }
         }
         
-        // Se ainda não encontrou, tentar buscar por nome parcial
         if (!barbeiroEncontrado && comanda.barbeiroNome) {
             const barbeiro = profissionais.find(p => 
                 p.nome && p.nome.toLowerCase().includes(comanda.barbeiroNome.toLowerCase())
@@ -1458,11 +1660,9 @@ async function carregarItensDaComanda(comanda) {
         
         if (!barbeiroEncontrado) {
             console.log("⚠️ Nenhum barbeiro encontrado para preencher automaticamente");
-            console.log("   - Verifique se o barbeiro está cadastrado na coleção 'profissionais'");
         }
     }
     
-    // ========== PREENCHER FORMA DE PAGAMENTO ==========
     const pagamentoSelect = document.getElementById("atendimentoPagamento");
     if (pagamentoSelect && comanda.formaPagamento) {
         pagamentoSelect.value = comanda.formaPagamento;
@@ -1482,7 +1682,6 @@ async function carregarItensDaComanda(comanda) {
         }
     }
     
-    // ========== CARREGAR SERVIÇOS ==========
     const servicosContainer = document.getElementById("servicosAtendimentoContainer");
     if (servicosContainer && comanda.servicos && comanda.servicos.length > 0) {
         console.log(`📋 Carregando ${comanda.servicos.length} serviço(s)...`);
@@ -1519,7 +1718,6 @@ async function carregarItensDaComanda(comanda) {
         }
     }
     
-    // ========== CARREGAR PRODUTOS ==========
     const produtosContainer = document.getElementById("produtosAtendimentoContainer");
     if (produtosContainer && comanda.produtos && comanda.produtos.length > 0) {
         const produtosNormais = comanda.produtos.filter(p => !p.isPreLancamento);
@@ -1558,7 +1756,6 @@ async function carregarItensDaComanda(comanda) {
         }
     }
     
-    // ========== CARREGAR PACOTES ==========
     const pacotesContainer = document.getElementById("pacotesAtendimentoContainer");
     if (pacotesContainer && comanda.pacotes && comanda.pacotes.length > 0) {
         const emptyMessage = pacotesContainer.querySelector('.empty-pacotes-message');
@@ -1597,7 +1794,6 @@ async function carregarItensDaComanda(comanda) {
         }
     }
     
-    // ========== APLICAR DESCONTO ==========
     if (comanda.desconto && comanda.desconto.valor > 0) {
         descontoAplicado = {
             valor: comanda.desconto.valor,
@@ -1626,13 +1822,11 @@ async function carregarItensDaComanda(comanda) {
         if (btnAplicarDesconto) btnAplicarDesconto.style.display = "none";
     }
     
-    // ========== ADICIONAR OBSERVAÇÕES ==========
     const observacoesTextarea = document.getElementById("atendimentoObservacoes");
     if (observacoesTextarea && comanda.observacoes) {
         observacoesTextarea.value = comanda.observacoes;
     }
     
-    // ========== RECALCULAR TOTAIS ==========
     setTimeout(() => {
         calcularTotalAtendimento();
         
@@ -1648,14 +1842,12 @@ async function carregarItensDaComanda(comanda) {
         }
     }, 300);
     
-    // Limpar área de busca
     limparInfoComanda();
     
     const inputNumero = document.getElementById("buscarComandaNumero");
     if (inputNumero) inputNumero.value = "";
 }
 
-// Configurar event listener para buscar comanda
 function configurarBuscarComanda() {
     const btnBuscar = document.getElementById("btnBuscarComanda");
     const inputNumero = document.getElementById("buscarComandaNumero");
