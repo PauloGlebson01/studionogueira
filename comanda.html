@@ -76,7 +76,8 @@
                     <li class="nav-separator">Administração</li>
                     <li class="nav-item"><a href="barbeiros.html"><i class="fa-solid fa-user-md"></i>
                             <span>Barbeiros</span></a></li>
-                    <li class="nav-item"><a href="bloqueios.html"><i class="fa-solid fa-lock"></i>         <span>Bloqueios</span></a></li>
+                    <li class="nav-item"><a href="bloqueios.html"><i class="fa-solid fa-lock"></i> 
+                            <span>Bloqueios</span></a></li>
                     <li class="nav-item"><a href="exportacoes.html"><i class="fa-solid fa-chart-pie"></i>
                             <span>Exportações</span></a></li>
                     <li class="nav-item"><a href="configuracoes.html"><i class="fa-solid fa-gear"></i>
@@ -505,6 +506,365 @@
     <link rel="stylesheet" href="floating-caixa.css">
     <script type="module" src="floating-caixa.js"></script>
 
+    <!-- CONFIGURAÇÃO ÚNICA DO FIREBASE PARA PRÉ-LANÇAMENTO -->
+    <script type="module">
+        // Configuração ÚNICA do Firebase (mesma do comanda.js)
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+        import { 
+            getFirestore, collection, getDocs, addDoc, updateDoc, doc, query, where, Timestamp, deleteDoc
+        } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+        
+        // CONFIGURAÇÃODE DADOS
+          const firebaseConfig = {
+                apiKey: "AIzaSyC5xXm9T2nzh6xxZ5-zrMHfCNdqQOG8SZI",
+                authDomain: "studio-nogueira-e07bb.firebaseapp.com",
+                projectId: "studio-nogueira-e07bb",
+                storageBucket: "studio-nogueira-e07bb.firebasestorage.app",
+                messagingSenderId: "150077330983",
+                appId: "1:150077330983:web:a49838c4cde9df4e1de002",
+                measurementId: "G-WX477KDZQC"
+            };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        let preLancamentosAtuais = [];
+
+        const btnAdicionar = document.getElementById('btnAdicionarPreLancamento');
+        const modalPreLancamento = document.getElementById('modalSelecionarProdutoPreLancamento');
+        const produtosContainer = document.getElementById('produtosPreLancamentoLista');
+        const btnConfirmar = document.getElementById('btnConfirmarPreLancamento');
+        const observacaoInput = document.getElementById('preLancamentoObservacao');
+        const preLancamentoLista = document.getElementById('preLancamentoLista');
+
+        function showToast(msg, isError = false) {
+            const toast = document.getElementById('toast');
+            const toastMsg = document.getElementById('toastMsg');
+            if (!toast) return;
+            toastMsg.textContent = msg;
+            toast.style.background = isError ? '#ef4444' : '#10b981';
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+
+        function formatarMoeda(valor) {
+            return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor || 0);
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        async function carregarProdutosFirestore() {
+            if (!produtosContainer) return;
+            produtosContainer.innerHTML = `<div class="loading-produtos"><i class="fa-solid fa-spinner fa-spin"></i> Carregando produtos do estoque...</div>`;
+            try {
+                const querySnapshot = await getDocs(collection(db, "produtos"));
+                const produtos = [];
+                querySnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    if (data.nome && data.nome.trim() !== "") {
+                        produtos.push({
+                            id: doc.id,
+                            nome: data.nome,
+                            preco: data.preco || 0,
+                            quantidade: data.quantidade || 0
+                        });
+                    }
+                });
+                if (produtos.length === 0) {
+                    produtosContainer.innerHTML = `<div class="empty-produtos"><i class="fa-solid fa-box-open"></i><p>Nenhum produto cadastrado no estoque</p><small>Cadastre produtos na página de Estoque primeiro</small></div>`;
+                } else {
+                    produtosContainer.innerHTML = produtos.map(produto => `
+                        <div class="pre-lancamento-produto-item" data-id="${produto.id}" data-preco="${produto.preco}" data-nome="${escapeHtml(produto.nome)}" data-estoque="${produto.quantidade}">
+                            <div class="pre-lancamento-produto-info">
+                                <h4>${escapeHtml(produto.nome)}</h4>
+                                <p>Estoque: ${produto.quantidade || 0} unidades | Preço: ${formatarMoeda(produto.preco)}</p>
+                            </div>
+                            <div class="pre-lancamento-produto-preco">${formatarMoeda(produto.preco)}</div>
+                        </div>
+                    `).join('');
+                }
+                document.querySelectorAll('#produtosPreLancamentoLista .pre-lancamento-produto-item').forEach(item => {
+                    item.addEventListener('click', function () {
+                        document.querySelectorAll('#produtosPreLancamentoLista .pre-lancamento-produto-item').forEach(i => i.classList.remove('selected'));
+                        this.classList.add('selected');
+                    });
+                });
+            } catch (error) {
+                console.error("Erro ao carregar produtos:", error);
+                produtosContainer.innerHTML = `<div class="empty-produtos" style="color:#ef4444;"><i class="fa-solid fa-exclamation-triangle"></i><p>Erro ao carregar produtos: ${error.message}</p><button id="btnTentarNovamentePre" class="btn-ghost" style="margin-top:10px;">Tentar Novamente</button></div>`;
+                const btnTentar = document.getElementById('btnTentarNovamentePre');
+                if (btnTentar) btnTentar.onclick = () => carregarProdutosFirestore();
+            }
+        }
+
+        function renderizarPreLancamentos() {
+            if (!preLancamentoLista) return;
+            if (preLancamentosAtuais.length === 0) {
+                preLancamentoLista.innerHTML = `<div class="empty-pre-lancamento"><i class="fa-solid fa-info-circle"></i><p>Nenhum produto em pré-lançamento</p><small>Os produtos adicionados como pré-lançamentos estarão disponíveis para acompanhamento e validação.</small></div>`;
+                return;
+            }
+            preLancamentoLista.innerHTML = preLancamentosAtuais.map((item, index) => `
+                <div class="pre-lancamento-item" data-index="${index}">
+                    <div class="pre-lancamento-item-info">
+                        <h5><i class="fa-solid fa-box"></i> ${escapeHtml(item.nome)} <span class="lembrete-badge">Pré-lançamento</span></h5>
+                        ${item.observacao ? `<p><i class="fa-solid fa-comment"></i> ${escapeHtml(item.observacao)}</p>` : ''}
+                        <small>Será entregue na próxima visita</small>
+                    </div>
+                    <div class="pre-lancamento-item-valor">${formatarMoeda(item.preco)}</div>
+                    <div class="pre-lancamento-item-actions">
+                        <button class="btn-remover-pre-lancamento" data-index="${index}"><i class="fa-solid fa-trash"></i></button>
+                    </div>
+                </div>
+            `).join('');
+            
+            document.querySelectorAll('#preLancamentoLista .btn-remover-pre-lancamento').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const index = parseInt(btn.getAttribute('data-index'));
+                    const removido = preLancamentosAtuais.splice(index, 1)[0];
+                    showToast(`❌ "${removido.nome}" removido do pré-lançamento`);
+                    renderizarPreLancamentos();
+                    if (window.comandaEditando && window.comandaEditando.produtos) {
+                        const idx = window.comandaEditando.produtos.findIndex(p => p.produtoId === removido.id && p.isPreLancamento);
+                        if (idx !== -1) window.comandaEditando.produtos.splice(idx, 1);
+                    }
+                    if (window.recalcularTotalComDesconto) window.recalcularTotalComDesconto();
+                    if (window.renderizarListaItensEdicao) window.renderizarListaItensEdicao();
+                });
+            });
+        }
+
+        async function abrirModal() {
+            const editarCliente = document.getElementById('editarCliente');
+            if (!editarCliente || !editarCliente.value) {
+                showToast('Selecione um cliente primeiro!', true);
+                return;
+            }
+            if (observacaoInput) observacaoInput.value = '';
+            if (modalPreLancamento) modalPreLancamento.classList.add('active');
+            await carregarProdutosFirestore();
+        }
+
+        function fecharModal() {
+            if (modalPreLancamento) modalPreLancamento.classList.remove('active');
+        }
+
+        async function salvarPreLancamentoNoFirebase(produtoId, produtoNome, produtoPreco, observacao, clienteId) {
+            try {
+                // Verificar se já existe pré-lançamento pendente para este produto/cliente
+                const lembretesQuery = query(
+                    collection(db, "lembretes_comanda"),
+                    where("clienteId", "==", clienteId),
+                    where("produtoId", "==", produtoId),
+                    where("status", "==", "pendente")
+                );
+                const existingSnapshot = await getDocs(lembretesQuery);
+                
+                if (!existingSnapshot.empty) {
+                    const existingDoc = existingSnapshot.docs[0];
+                    const existingData = existingDoc.data();
+                    const novaQuantidade = (existingData.quantidade || 1) + 1;
+                    
+                    await updateDoc(doc(db, "lembretes_comanda", existingDoc.id), {
+                        quantidade: novaQuantidade,
+                        observacao: observacao || existingData.observacao,
+                        updatedAt: Timestamp.now()
+                    });
+                    showToast(`✅ Quantidade do produto "${produtoNome}" atualizada para ${novaQuantidade}x!`);
+                } else {
+                    await addDoc(collection(db, "lembretes_comanda"), {
+                        clienteId: clienteId,
+                        produtoId: produtoId,
+                        produtoNome: produtoNome,
+                        preco: produtoPreco,
+                        quantidade: 1,
+                        observacao: observacao,
+                        status: "pendente",
+                        dataCriacao: Timestamp.now(),
+                        createdAt: Timestamp.now(),
+                        updatedAt: Timestamp.now()
+                    });
+                    showToast(`✅ "${produtoNome}" adicionado como pré-lançamento!`);
+                }
+                return true;
+            } catch (error) {
+                console.error("Erro ao salvar pré-lançamento:", error);
+                showToast(`Erro ao salvar: ${error.message}`, true);
+                return false;
+            }
+        }
+
+        async function confirmarAdicao() {
+            const selected = document.querySelector('#produtosPreLancamentoLista .pre-lancamento-produto-item.selected');
+            if (!selected) {
+                showToast('Clique em um produto para selecioná-lo!', true);
+                return;
+            }
+            
+            const produtoId = selected.getAttribute('data-id');
+            const produtoNome = selected.getAttribute('data-nome');
+            const produtoPreco = parseFloat(selected.getAttribute('data-preco'));
+            const observacao = observacaoInput ? observacaoInput.value : '';
+            const editarCliente = document.getElementById('editarCliente');
+            const clienteId = editarCliente ? editarCliente.value : null;
+            
+            if (!window.comandaEditando) {
+                showToast('Erro: Nenhuma comanda aberta para edição.', true);
+                return;
+            }
+            
+            const existe = preLancamentosAtuais.find(p => p.id === produtoId);
+            if (existe) {
+                showToast(`"${produtoNome}" já está na lista de pré-lançamentos!`, true);
+                return;
+            }
+            
+            // Salvar no Firebase
+            const salvou = await salvarPreLancamentoNoFirebase(produtoId, produtoNome, produtoPreco, observacao, clienteId);
+            
+            if (salvou) {
+                window.comandaEditando.produtos.push({
+                    produtoId: produtoId,
+                    nome: produtoNome,
+                    preco: produtoPreco,
+                    quantidade: 1,
+                    isPreLancamento: true,
+                    observacaoPreLancamento: observacao
+                });
+                
+                preLancamentosAtuais.push({
+                    id: produtoId,
+                    nome: produtoNome,
+                    preco: produtoPreco,
+                    observacao: observacao,
+                    dataAdicao: new Date().toISOString()
+                });
+                
+                renderizarPreLancamentos();
+                if (window.recalcularTotalComDesconto) window.recalcularTotalComDesconto();
+                if (window.renderizarListaItensEdicao) window.renderizarListaItensEdicao();
+            }
+            
+            fecharModal();
+        }
+
+        async function carregarPreLancamentosExistentes() {
+            const editarCliente = document.getElementById('editarCliente');
+            const clienteId = editarCliente ? editarCliente.value : null;
+            if (!clienteId) return;
+            
+            try {
+                const lembretesQuery = query(
+                    collection(db, "lembretes_comanda"),
+                    where("clienteId", "==", clienteId),
+                    where("status", "==", "pendente")
+                );
+                const snapshot = await getDocs(lembretesQuery);
+                
+                preLancamentosAtuais = [];
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    preLancamentosAtuais.push({
+                        id: data.produtoId,
+                        nome: data.produtoNome,
+                        preco: data.preco || 0,
+                        observacao: data.observacao || '',
+                        lembreteId: doc.id,
+                        quantidade: data.quantidade || 1
+                    });
+                });
+                
+                renderizarPreLancamentos();
+                
+                if (window.comandaEditando && window.comandaEditando.produtos) {
+                    for (const item of preLancamentosAtuais) {
+                        const jaExiste = window.comandaEditando.produtos.some(p => p.produtoId === item.id && p.isPreLancamento);
+                        if (!jaExiste) {
+                            window.comandaEditando.produtos.push({
+                                produtoId: item.id,
+                                nome: item.nome,
+                                preco: item.preco,
+                                quantidade: item.quantidade || 1,
+                                isPreLancamento: true,
+                                observacaoPreLancamento: item.observacao,
+                                lembreteId: item.lembreteId
+                            });
+                        }
+                    }
+                    if (window.recalcularTotalComDesconto) window.recalcularTotalComDesconto();
+                    if (window.renderizarListaItensEdicao) window.renderizarListaItensEdicao();
+                }
+            } catch (error) {
+                console.error("Erro ao carregar pré-lançamentos existentes:", error);
+            }
+        }
+
+        function setupEventos() {
+            if (btnAdicionar) {
+                const novoBtn = btnAdicionar.cloneNode(true);
+                btnAdicionar.parentNode.replaceChild(novoBtn, btnAdicionar);
+                novoBtn.addEventListener('click', async (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    await abrirModal();
+                });
+            }
+            
+            if (btnConfirmar) {
+                const novoConfirmar = btnConfirmar.cloneNode(true);
+                btnConfirmar.parentNode.replaceChild(novoConfirmar, btnConfirmar);
+                novoConfirmar.addEventListener('click', confirmarAdicao);
+            }
+            
+            document.querySelectorAll('.modal-close-pre-lancamento, .btn-cancel-pre-lancamento').forEach(btn => {
+                btn.addEventListener('click', fecharModal);
+            });
+            
+            if (modalPreLancamento) {
+                modalPreLancamento.addEventListener('click', (e) => {
+                    if (e.target === modalPreLancamento) fecharModal();
+                });
+            }
+            
+            // Observar mudança de cliente
+            const editarCliente = document.getElementById('editarCliente');
+            if (editarCliente) {
+                editarCliente.addEventListener('change', () => {
+                    carregarPreLancamentosExistentes();
+                });
+            }
+        }
+
+        function observarComandaEditando() {
+            let tentativas = 0;
+            const maxTentativas = 30;
+            const checkInterval = setInterval(() => {
+                tentativas++;
+                if (window.comandaEditando) {
+                    clearInterval(checkInterval);
+                    carregarPreLancamentosExistentes();
+                } else if (tentativas >= maxTentativas) {
+                    clearInterval(checkInterval);
+                }
+            }, 500);
+        }
+
+        function init() {
+            setupEventos();
+            observarComandaEditando();
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', init);
+        } else {
+            init();
+        }
+    </script>
+
     <!-- SCRIPT DO MENU LATERAL CORRIGIDO -->
     <script>
         (function () {
@@ -643,268 +1003,6 @@
                 if (e.target === document.getElementById('modalDetalhesComanda')) document.getElementById('modalDetalhesComanda')?.classList.remove('active');
                 if (e.target === document.getElementById('modalEditarComanda')) document.getElementById('modalEditarComanda')?.classList.remove('active');
             });
-        })();
-    </script>
-
-    <!-- PRÉ-LANÇAMENTO CONEXÃO DIRETA COM FIREBASE -->
-    <script>
-        (function () {
-            let preLancamentosAtuais = [];
-            let db = null;
-
-            const btnAdicionar = document.getElementById('btnAdicionarPreLancamento');
-            const modalPreLancamento = document.getElementById('modalSelecionarProdutoPreLancamento');
-            const produtosContainer = document.getElementById('produtosPreLancamentoLista');
-            const btnConfirmar = document.getElementById('btnConfirmarPreLancamento');
-            const observacaoInput = document.getElementById('preLancamentoObservacao');
-            const preLancamentoLista = document.getElementById('preLancamentoLista');
-
-            //BANCO DE DADOS
-
-            const firebaseConfig = {
-                apiKey: "AIzaSyC5xXm9T2nzh6xxZ5-zrMHfCNdqQOG8SZI",
-                authDomain: "studio-nogueira-e07bb.firebaseapp.com",
-                projectId: "studio-nogueira-e07bb",
-                storageBucket: "studio-nogueira-e07bb.firebasestorage.app",
-                messagingSenderId: "150077330983",
-                appId: "1:150077330983:web:a49838c4cde9df4e1de002",
-                measurementId: "G-WX477KDZQC"
-            };
-
-            function showToast(msg, isError = false) {
-                const toast = document.getElementById('toast');
-                const toastMsg = document.getElementById('toastMsg');
-                if (!toast) return;
-                toastMsg.textContent = msg;
-                toast.style.background = isError ? '#ef4444' : '#10b981';
-                toast.classList.add('show');
-                setTimeout(() => toast.classList.remove('show'), 3000);
-            }
-
-            function formatarMoeda(valor) {
-                return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor || 0);
-            }
-
-            function escapeHtml(text) {
-                if (!text) return '';
-                const div = document.createElement('div');
-                div.textContent = text;
-                return div.innerHTML;
-            }
-
-            async function initFirebase() {
-                try {
-                    const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js");
-                    const { getFirestore } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
-                    const app = initializeApp(firebaseConfig);
-                    db = getFirestore(app);
-                    return true;
-                } catch (error) {
-                    console.error("Erro ao inicializar Firebase:", error);
-                    return false;
-                }
-            }
-
-            async function carregarProdutosFirestore() {
-                if (!produtosContainer) return;
-                produtosContainer.innerHTML = `<div class="loading-produtos"><i class="fa-solid fa-spinner fa-spin"></i> Carregando produtos do estoque...</div>`;
-                try {
-                    if (!db) {
-                        const initialized = await initFirebase();
-                        if (!initialized) throw new Error("Não foi possível conectar ao Firebase");
-                    }
-                    const { collection, getDocs } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
-                    const querySnapshot = await getDocs(collection(db, "produtos"));
-                    const produtos = [];
-                    querySnapshot.forEach((doc) => {
-                        const data = doc.data();
-                        if (data.nome && data.nome.trim() !== "") {
-                            produtos.push({
-                                id: doc.id,
-                                nome: data.nome,
-                                preco: data.preco || 0,
-                                quantidade: data.quantidade || 0
-                            });
-                        }
-                    });
-                    if (produtos.length === 0) {
-                        produtosContainer.innerHTML = `<div class="empty-produtos"><i class="fa-solid fa-box-open"></i><p>Nenhum produto cadastrado no estoque</p><small>Cadastre produtos na página de Estoque primeiro</small></div>`;
-                    } else {
-                        produtosContainer.innerHTML = produtos.map(produto => `
-                            <div class="pre-lancamento-produto-item" data-id="${produto.id}" data-preco="${produto.preco}" data-nome="${escapeHtml(produto.nome)}" data-estoque="${produto.quantidade}">
-                                <div class="pre-lancamento-produto-info">
-                                    <h4>${escapeHtml(produto.nome)}</h4>
-                                    <p>Estoque: ${produto.quantidade || 0} unidades | Preço: ${formatarMoeda(produto.preco)}</p>
-                                </div>
-                                <div class="pre-lancamento-produto-preco">${formatarMoeda(produto.preco)}</div>
-                            </div>
-                        `).join('');
-                    }
-                    document.querySelectorAll('#produtosPreLancamentoLista .pre-lancamento-produto-item').forEach(item => {
-                        item.addEventListener('click', function () {
-                            document.querySelectorAll('#produtosPreLancamentoLista .pre-lancamento-produto-item').forEach(i => i.classList.remove('selected'));
-                            this.classList.add('selected');
-                        });
-                    });
-                } catch (error) {
-                    console.error("Erro ao carregar produtos:", error);
-                    produtosContainer.innerHTML = `<div class="empty-produtos" style="color:#ef4444;"><i class="fa-solid fa-exclamation-triangle"></i><p>Erro ao carregar produtos: ${error.message}</p><button id="btnTentarNovamente" class="btn-ghost" style="margin-top:10px;">Tentar Novamente</button></div>`;
-                    const btnTentar = document.getElementById('btnTentarNovamente');
-                    if (btnTentar) btnTentar.onclick = () => carregarProdutosFirestore();
-                }
-            }
-
-            function renderizarPreLancamentos() {
-                if (!preLancamentoLista) return;
-                if (preLancamentosAtuais.length === 0) {
-                    preLancamentoLista.innerHTML = `<div class="empty-pre-lancamento"><i class="fa-solid fa-info-circle"></i><p>Nenhum produto em pré-lançamento</p><small>Os produtos adicionados como pré-lançamentos estarão disponíveis para acompanhamento e validação.</small></div>`;
-                    return;
-                }
-                preLancamentoLista.innerHTML = preLancamentosAtuais.map((item, index) => `
-                    <div class="pre-lancamento-item" data-index="${index}">
-                        <div class="pre-lancamento-item-info">
-                            <h5><i class="fa-solid fa-box"></i> ${escapeHtml(item.nome)} <span class="lembrete-badge">Pré-lançamento</span></h5>
-                            ${item.observacao ? `<p><i class="fa-solid fa-comment"></i> ${escapeHtml(item.observacao)}</p>` : ''}
-                            <small>Será entregue na próxima visita</small>
-                        </div>
-                        <div class="pre-lancamento-item-valor">${formatarMoeda(item.preco)}</div>
-                        <div class="pre-lancamento-item-actions">
-                            <button class="btn-remover-pre-lancamento" data-index="${index}"><i class="fa-solid fa-trash"></i></button>
-                        </div>
-                    </div>
-                `).join('');
-                document.querySelectorAll('#preLancamentoLista .btn-remover-pre-lancamento').forEach(btn => {
-                    btn.addEventListener('click', () => {
-                        const index = parseInt(btn.getAttribute('data-index'));
-                        const removido = preLancamentosAtuais.splice(index, 1)[0];
-                        showToast(`❌ "${removido.nome}" removido do pré-lançamento`);
-                        renderizarPreLancamentos();
-                        if (window.comandaEditando && window.comandaEditando.produtos) {
-                            const idx = window.comandaEditando.produtos.findIndex(p => p.produtoId === removido.id && p.isPreLancamento);
-                            if (idx !== -1) window.comandaEditando.produtos.splice(idx, 1);
-                        }
-                        if (window.recalcularTotalComDesconto) window.recalcularTotalComDesconto();
-                        if (window.renderizarListaItensEdicao) window.renderizarListaItensEdicao();
-                    });
-                });
-            }
-
-            async function abrirModal() {
-                const editarCliente = document.getElementById('editarCliente');
-                if (!editarCliente || !editarCliente.value) {
-                    showToast('Selecione um cliente primeiro!', true);
-                    return;
-                }
-                if (observacaoInput) observacaoInput.value = '';
-                if (modalPreLancamento) modalPreLancamento.classList.add('active');
-                await carregarProdutosFirestore();
-            }
-
-            function fecharModal() {
-                if (modalPreLancamento) modalPreLancamento.classList.remove('active');
-            }
-
-            function confirmarAdicao() {
-                const selected = document.querySelector('#produtosPreLancamentoLista .pre-lancamento-produto-item.selected');
-                if (!selected) {
-                    showToast('Clique em um produto para selecioná-lo!', true);
-                    return;
-                }
-                const produtoId = selected.getAttribute('data-id');
-                const produtoNome = selected.getAttribute('data-nome');
-                const produtoPreco = parseFloat(selected.getAttribute('data-preco'));
-                const observacao = observacaoInput ? observacaoInput.value : '';
-                if (!window.comandaEditando) {
-                    showToast('Erro: Nenhuma comanda aberta para edição.', true);
-                    return;
-                }
-                const existe = preLancamentosAtuais.find(p => p.id === produtoId);
-                if (existe) {
-                    showToast(`"${produtoNome}" já está na lista de pré-lançamentos!`, true);
-                    return;
-                }
-                window.comandaEditando.produtos.push({
-                    produtoId: produtoId,
-                    nome: produtoNome,
-                    preco: produtoPreco,
-                    quantidade: 1,
-                    isPreLancamento: true,
-                    observacaoPreLancamento: observacao
-                });
-                preLancamentosAtuais.push({
-                    id: produtoId,
-                    nome: produtoNome,
-                    preco: produtoPreco,
-                    observacao: observacao,
-                    dataAdicao: new Date().toISOString()
-                });
-                renderizarPreLancamentos();
-                if (window.recalcularTotalComDesconto) window.recalcularTotalComDesconto();
-                if (window.renderizarListaItensEdicao) window.renderizarListaItensEdicao();
-                showToast(`✅ "${produtoNome}" adicionado como pré-lançamento!`);
-                fecharModal();
-            }
-
-            function observarComandaEditando() {
-                let tentativas = 0;
-                const maxTentativas = 30;
-                const checkInterval = setInterval(() => {
-                    tentativas++;
-                    if (window.comandaEditando) {
-                        clearInterval(checkInterval);
-                        if (window.comandaEditando.produtos) {
-                            const preExistentes = window.comandaEditando.produtos.filter(p => p.isPreLancamento === true);
-                            preLancamentosAtuais = preExistentes.map(p => ({
-                                id: p.produtoId,
-                                nome: p.nome,
-                                preco: p.preco,
-                                observacao: p.observacaoPreLancamento || '',
-                                dataAdicao: new Date().toISOString()
-                            }));
-                            renderizarPreLancamentos();
-                        }
-                    } else if (tentativas >= maxTentativas) {
-                        clearInterval(checkInterval);
-                    }
-                }, 500);
-            }
-
-            function setupEventos() {
-                if (btnAdicionar) {
-                    const novoBtn = btnAdicionar.cloneNode(true);
-                    btnAdicionar.parentNode.replaceChild(novoBtn, btnAdicionar);
-                    novoBtn.addEventListener('click', async (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        await abrirModal();
-                    });
-                }
-                if (btnConfirmar) {
-                    const novoConfirmar = btnConfirmar.cloneNode(true);
-                    btnConfirmar.parentNode.replaceChild(novoConfirmar, btnConfirmar);
-                    novoConfirmar.addEventListener('click', confirmarAdicao);
-                }
-                document.querySelectorAll('.modal-close-pre-lancamento, .btn-cancel-pre-lancamento').forEach(btn => {
-                    btn.addEventListener('click', fecharModal);
-                });
-                if (modalPreLancamento) {
-                    modalPreLancamento.addEventListener('click', (e) => {
-                        if (e.target === modalPreLancamento) fecharModal();
-                    });
-                }
-            }
-
-            async function init() {
-                await initFirebase();
-                setupEventos();
-                observarComandaEditando();
-            }
-
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', init);
-            } else {
-                init();
-            }
         })();
     </script>
 
