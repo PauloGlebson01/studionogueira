@@ -31,18 +31,10 @@
             <div class="input-group">
                 <label for="telefone"><i class="fa-brands fa-whatsapp"></i> WhatsApp para Contato *</label>
                 <input type="tel" id="telefone" placeholder="(83) 99999-9999" autocomplete="tel" required>
-                <small
-                    style="color: #2199EF; display: block; margin-top: 6px; font-size: 0.7rem; background: rgba(33, 153, 239, 0.1); padding: 6px 10px; border-radius: 10px;">
-                    <i class="fa-solid fa-robot"></i>
-                    <strong>💡 Dica:</strong> Se você já fez agendamento antes, seus dados (nome, e-mail e data de
-                    nascimento) serão <strong>preenchidos automaticamente</strong> ao digitar seu WhatsApp!
+                <small style="color: #64748b; display: block; margin-top: 6px;">
+                    <i class="fa-solid fa-phone"></i>
+                    Caso este contato esteja vinculado a mais de um cadastro, selecione o cadastro correspondente para a realização do agendamento.
                 </small>
-            </div>
-
-            <div class="input-group">
-                <label for="email"><i class="fa-solid fa-envelope"></i> E-mail (Opcional)</label>
-                <input type="email" id="email" placeholder="seu@email.com">
-                <small style="color: #64748b; display: block; margin-top: 4px;">📧 Ao informar seu e-mail, você receberá a confirmação por e-mail e WhatsApp.</small>
             </div>
 
             <div class="input-group">
@@ -143,6 +135,27 @@
         </div>
         <div id="mensagem"></div>
         <footer>🔒 Agendamento seguro · Horários atualizados em tempo real</footer>
+    </div>
+
+    <!-- MODAL PARA SELEÇÃO DE CLIENTE QUANDO HÁ MÚLTIPLOS CADASTROS -->
+    <div id="modalSelecionarCliente" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <i class="fa-solid fa-users"></i>
+                <h3>Múltiplos cadastros encontrados</h3>
+            </div>
+            <div class="modal-body">
+                <p>Este número de WhatsApp está vinculado a mais de um cliente. Selecione qual deseja usar para este agendamento:</p>
+                <div id="listaClientesModal" class="lista-clientes-modal">
+                    <!-- Clientes serão listados aqui dinamicamente -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" id="btnFecharModal" class="btn-secundario">
+                    <i class="fa-solid fa-times"></i> Cancelar
+                </button>
+            </div>
+        </div>
     </div>
 
     <script type="module" src="agendamento.js"></script>

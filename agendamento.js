@@ -1,7 +1,5 @@
-// agendamento.js - Versão CORRIGIDA DEFINITIVA
-// CORREÇÃO: TODO agendamento existente bloqueia o horário para evitar dupla reserva
-// Independente do status (confirmado, concluido, cancelado, etc)
-// CORREÇÃO V2: Horários exibem apenas o horário de início (mantendo sincronização com duração)
+// agendamento.js - Versão CORRIGIDA com MODAL para seleção de múltiplos clientes
+// Quando múltiplos cadastros com o mesmo telefone, exibe modal para selecionar qual cliente usar
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { 
@@ -15,7 +13,8 @@ import {
     doc,
     updateDoc,
     getDoc,
-    orderBy
+    orderBy,
+    and
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { 
     getAuth, 
@@ -25,14 +24,14 @@ import {
 
 //CONFIGURAÇÕES DE DADOS
 const firebaseConfig = {
-    apiKey: "AIzaSyC5xXm9T2nzh6xxZ5-zrMHfCNdqQOG8SZI",
-    authDomain: "studio-nogueira-e07bb.firebaseapp.com",
-    projectId: "studio-nogueira-e07bb",
-    storageBucket: "studio-nogueira-e07bb.firebasestorage.app",
-    messagingSenderId: "150077330983",
-    appId: "1:150077330983:web:a49838c4cde9df4e1de002",
-    measurementId: "G-WX477KDZQC"
-  };
+    apiKey: "AIzaSyCgarMuCZ4sT-VO_ldyQjyG5MB6mR6i8rU",
+    authDomain: "barbearia-softclick.firebaseapp.com",
+    projectId: "barbearia-softclick",
+    storageBucket: "barbearia-softclick.firebasestorage.app",
+    messagingSenderId: "1079307759020",
+    appId: "1:1079307759020:web:231e08fb89fcb6b1e51e09",
+    measurementId: "G-SKF0BNWEWK"
+};
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -54,6 +53,15 @@ const observacaoGeral = document.getElementById("observacaoGeral");
 const servicosContainer = document.getElementById("servicosContainer");
 const btnAdicionarServico = document.getElementById("btnAdicionarServico");
 const valorTotalServicosSpan = document.getElementById("valorTotalServicos");
+
+// Elementos do Modal
+const modalSelecionarCliente = document.getElementById("modalSelecionarCliente");
+const listaClientesModal = document.getElementById("listaClientesModal");
+const btnFecharModal = document.getElementById("btnFecharModal");
+
+// Variáveis de controle
+let clienteSelecionadoParaAgendamento = null;
+let agendamentoEmAndamento = false;
 
 // ==================== HORÁRIOS POR DIA DA SEMANA ====================
 const horariosSegundaQuarta = [
@@ -118,44 +126,288 @@ function formatarTelefone(valor) {
     return v.slice(0, 16);
 }
 
-// ==================== FUNÇÃO PARA BUSCAR CLIENTE POR TELEFONE ====================
-async function buscarClientePorTelefone(telefone) {
+// ==================== FUNÇÕES DO MODAL ====================
+
+function abrirModalSelecionarCliente(clientes, telefone) {
+    if (!modalSelecionarCliente || !listaClientesModal) return;
+    
+    listaClientesModal.innerHTML = "";
+    
+    clientes.forEach(cliente => {
+        const card = document.createElement("div");
+        card.className = "cliente-card-modal";
+        
+        // Pegar inicial do nome
+        const inicial = cliente.nome ? cliente.nome.charAt(0).toUpperCase() : "?";
+        
+        // Formatar data de criação
+        let dataCriacao = "";
+        if (cliente.createdAt) {
+            const date = cliente.createdAt.toDate ? cliente.createdAt.toDate() : new Date(cliente.createdAt);
+            dataCriacao = date.toLocaleDateString('pt-BR');
+        }
+        
+        card.innerHTML = `
+            <div class="cliente-avatar-modal">${inicial}</div>
+            <div class="cliente-info-modal">
+                <h4>${cliente.nome}</h4>
+                <p>📅 Cliente desde: ${dataCriacao || "N/A"}</p>
+                <p>📊 ${cliente.totalAgendamentos || 0} agendamento(s)</p>
+                ${cliente.nascimento ? `<p>🎂 Nascimento: ${cliente.nascimento}</p>` : ""}
+                ${cliente.email ? `<p>✉️ ${cliente.email}</p>` : ""}
+            </div>
+            <i class="fa-solid fa-chevron-right" style="color: #2199EF;"></i>
+        `;
+        
+        card.addEventListener("click", () => {
+            // Selecionar este cliente
+            clienteSelecionadoParaAgendamento = {
+                id: cliente.id,
+                nome: cliente.nome,
+                email: cliente.email || "",
+                nascimento: cliente.nascimento || "",
+                telefone: telefone,
+                totalAgendamentos: cliente.totalAgendamentos || 0
+            };
+            
+            // Preencher os campos do formulário
+            if (nomeInput) nomeInput.value = cliente.nome;
+            if (emailInput && cliente.email) emailInput.value = cliente.email;
+            if (dataNascimentoInput && cliente.nascimento) dataNascimentoInput.value = cliente.nascimento;
+            
+            // Fechar modal
+            fecharModal();
+            
+            // Aplicar desconto de aniversário se for o caso
+            if (cliente.nascimento) {
+                verificarAniversario(cliente.nascimento, cliente.nome);
+            }
+            
+            mostrarMensagem(`✅ Cliente ${cliente.nome} selecionado!`, "sucesso");
+            
+            // Verificar campos preenchidos para liberar horários
+            verificarCamposPreenchidos();
+        });
+        
+        listaClientesModal.appendChild(card);
+    });
+    
+    modalSelecionarCliente.style.display = "flex";
+}
+
+function fecharModal() {
+    if (modalSelecionarCliente) {
+        modalSelecionarCliente.style.display = "none";
+    }
+}
+
+function verificarAniversario(dataNascimento, nome) {
+    if (!dataNascimento) return false;
+    
+    const hoje = new Date();
+    const nascimento = new Date(dataNascimento);
+    
+    if (nascimento.getMonth() === hoje.getMonth() && nascimento.getDate() === hoje.getDate()) {
+        mostrarMensagem(`🎂🎉 FELIZ ANIVERSÁRIO, ${nome.toUpperCase()}! 🎉🎂 Você ganha 10% de desconto hoje!`, "sucesso");
+        
+        setTimeout(() => {
+            aplicarDescontoAniversario();
+        }, 500);
+        return true;
+    }
+    return false;
+}
+
+function aplicarDescontoAniversario() {
+    if (!pacoteAtual) {
+        let totalAtual = 0;
+        document.querySelectorAll('.servico-select').forEach(select => {
+            const selectedOption = select.options[select.selectedIndex];
+            const preco = parseFloat(selectedOption?.getAttribute('data-preco') || 0);
+            totalAtual += preco;
+        });
+        
+        if (totalAtual > 0) {
+            const desconto = totalAtual * 0.10;
+            const novoTotal = totalAtual - desconto;
+            
+            if (valorTotalServicosSpan) {
+                valorTotalServicosSpan.innerHTML = `${formatarMoeda(novoTotal)} <span style="font-size: 0.65rem; color: #10b981; margin-left: 8px;">(10% OFF - Aniversário!)</span>`;
+                valorTotalServicosSpan.style.color = '#10b981';
+                setTimeout(() => {
+                    valorTotalServicosSpan.style.color = '';
+                }, 5000);
+            }
+        }
+    }
+}
+
+// ==================== FUNÇÃO PARA BUSCAR CLIENTES POR TELEFONE (RETORNA TODOS) ====================
+async function buscarTodosClientesPorTelefone(telefone) {
+    if (!telefone) return [];
+    
+    const telefoneNumerico = telefone.replace(/\D/g, "");
+    if (telefoneNumerico.length < 10) return [];
+    
+    try {
+        console.log(`🔍 Buscando TODOS clientes com telefone: ${telefoneNumerico}`);
+        
+        const clientesRef = collection(db, "clientes");
+        const qNumerico = query(clientesRef, where("telefoneNumerico", "==", telefoneNumerico));
+        const snapshotNumerico = await getDocs(qNumerico);
+        
+        const clientes = [];
+        snapshotNumerico.forEach(doc => {
+            clientes.push({ id: doc.id, ...doc.data() });
+        });
+        
+        // Se não encontrou por telefoneNumerico, tenta por telefone normal
+        if (clientes.length === 0) {
+            const qTelefone = query(clientesRef, where("telefone", "==", telefone));
+            const snapshotTelefone = await getDocs(qTelefone);
+            snapshotTelefone.forEach(doc => {
+                clientes.push({ id: doc.id, ...doc.data() });
+            });
+        }
+        
+        console.log(`📋 Encontrados ${clientes.length} clientes com este telefone`);
+        return clientes;
+        
+    } catch (error) {
+        console.error("Erro ao buscar clientes:", error);
+        return [];
+    }
+}
+
+// ==================== FUNÇÃO PARA BUSCAR CLIENTE POR TELEFONE E NOME ====================
+async function buscarClientePorTelefoneENome(telefone, nome) {
     if (!telefone) return null;
     
     const telefoneNumerico = telefone.replace(/\D/g, "");
     if (telefoneNumerico.length < 10) return null;
     
+    const nomeNormalizado = nome ? normalizarTexto(nome) : "";
+    
     try {
-        console.log(`🔍 Buscando cliente com telefone: ${telefoneNumerico}`);
+        console.log(`🔍 Buscando cliente com telefone: ${telefoneNumerico} e nome: ${nome}`);
         
         const clientesRef = collection(db, "clientes");
         
-        const qNumerico = query(clientesRef, where("telefoneNumerico", "==", telefoneNumerico));
-        const snapshotNumerico = await getDocs(qNumerico);
+        // Buscar por telefoneNumerico + nome
+        const qExato = query(
+            clientesRef, 
+            where("telefoneNumerico", "==", telefoneNumerico),
+            where("nome", "==", nome)
+        );
+        const snapshotExato = await getDocs(qExato);
         
-        if (!snapshotNumerico.empty) {
-            const clienteDoc = snapshotNumerico.docs[0];
+        if (!snapshotExato.empty) {
+            const clienteDoc = snapshotExato.docs[0];
             const cliente = { id: clienteDoc.id, ...clienteDoc.data() };
-            console.log("✅ Cliente encontrado por telefoneNumerico:", cliente);
+            console.log("✅ Cliente encontrado por telefone+nome exato:", cliente.nome);
             return cliente;
         }
         
-        const qTelefone = query(clientesRef, where("telefone", "==", telefone));
-        const snapshotTelefone = await getDocs(qTelefone);
-        
-        if (!snapshotTelefone.empty) {
-            const clienteDoc = snapshotTelefone.docs[0];
-            const cliente = { id: clienteDoc.id, ...clienteDoc.data() };
-            console.log("✅ Cliente encontrado por telefone:", cliente);
-            return cliente;
+        // Busca normalizada
+        const todosClientes = await getDocs(clientesRef);
+        for (const doc of todosClientes.docs) {
+            const cliente = doc.data();
+            const telefoneCliente = cliente.telefoneNumerico || cliente.telefone?.replace(/\D/g, "");
+            const nomeClienteNormalizado = normalizarTexto(cliente.nome || "");
+            
+            if (telefoneCliente === telefoneNumerico && nomeClienteNormalizado === nomeNormalizado) {
+                console.log("✅ Cliente encontrado por telefone+nome normalizado:", cliente.nome);
+                return { id: doc.id, ...cliente };
+            }
         }
         
-        console.log("❌ Nenhum cliente encontrado com este telefone");
+        console.log("❌ Nenhum cliente encontrado com este telefone e nome");
         return null;
         
     } catch (error) {
         console.error("Erro ao buscar cliente:", error);
         return null;
+    }
+}
+
+// ==================== FUNÇÃO PARA PROCESSAR CLIENTE AO DIGITAR TELEFONE ====================
+let debounceTimeout = null;
+
+async function processarTelefoneCliente(telefone) {
+    if (!telefone || telefone.replace(/\D/g, "").length < 10) {
+        // Limpar cliente selecionado se telefone for inválido
+        clienteSelecionadoParaAgendamento = null;
+        return;
+    }
+    
+    const clientes = await buscarTodosClientesPorTelefone(telefone);
+    
+    if (clientes.length === 0) {
+        // Nenhum cliente encontrado - permitir criar novo
+        clienteSelecionadoParaAgendamento = null;
+        // Limpar campos de nome (para novo cadastro)
+        if (nomeInput && !agendamentoEmAndamento) {
+            // Não limpar automaticamente - apenas resetar seleção
+        }
+    } 
+    else if (clientes.length === 1) {
+        // Apenas um cliente - usar automaticamente
+        const cliente = clientes[0];
+        clienteSelecionadoParaAgendamento = {
+            id: cliente.id,
+            nome: cliente.nome,
+            email: cliente.email || "",
+            nascimento: cliente.nascimento || "",
+            telefone: telefone,
+            totalAgendamentos: cliente.totalAgendamentos || 0
+        };
+        
+        // Preencher campos
+        if (nomeInput) nomeInput.value = cliente.nome;
+        if (emailInput && cliente.email) emailInput.value = cliente.email;
+        if (dataNascimentoInput && cliente.nascimento) dataNascimentoInput.value = cliente.nascimento;
+        
+        // Verificar aniversário
+        if (cliente.nascimento) {
+            verificarAniversario(cliente.nascimento, cliente.nome);
+        }
+        
+        console.log(`✅ Cliente único encontrado: ${cliente.nome}`);
+    }
+    else if (clientes.length > 1) {
+        // Múltiplos clientes - mostrar modal para seleção
+        console.log(`⚠️ Múltiplos clientes (${clientes.length}) encontrados com este telefone`);
+        
+        // Se já tem um nome digitado, tenta encontrar match
+        const nomeDigitado = nomeInput?.value.trim() || "";
+        if (nomeDigitado) {
+            const matchExato = clientes.find(c => c.nome.toLowerCase() === nomeDigitado.toLowerCase());
+            if (matchExato) {
+                // Encontrou match exato com o nome digitado
+                clienteSelecionadoParaAgendamento = {
+                    id: matchExato.id,
+                    nome: matchExato.nome,
+                    email: matchExato.email || "",
+                    nascimento: matchExato.nascimento || "",
+                    telefone: telefone,
+                    totalAgendamentos: matchExato.totalAgendamentos || 0
+                };
+                
+                if (nomeInput) nomeInput.value = matchExato.nome;
+                if (emailInput && matchExato.email) emailInput.value = matchExato.email;
+                if (dataNascimentoInput && matchExato.nascimento) dataNascimentoInput.value = matchExato.nascimento;
+                
+                if (matchExato.nascimento) {
+                    verificarAniversario(matchExato.nascimento, matchExato.nome);
+                }
+                
+                console.log(`✅ Match exato encontrado: ${matchExato.nome}`);
+                return;
+            }
+        }
+        
+        // Mostrar modal para o usuário selecionar
+        abrirModalSelecionarCliente(clientes, telefone);
     }
 }
 
@@ -201,7 +453,6 @@ async function buscarBloqueios(data, profissionalId = null) {
         });
         
         bloqueiosCache.set(cacheKey, bloqueios);
-        
         setTimeout(() => bloqueiosCache.delete(cacheKey), 5 * 60 * 1000);
         
         return bloqueios;
@@ -225,222 +476,6 @@ async function isHorarioBloqueado(data, horario, profissionalId) {
     }
     
     return false;
-}
-
-// ==================== FUNÇÃO PARA AUTO PREENCHER DADOS DO CLIENTE ====================
-async function autoPreencherDadosCliente() {
-    const telefone = telefoneInput?.value || "";
-    const telefoneNumerico = telefone.replace(/\D/g, "");
-    
-    if (telefoneNumerico.length < 10) return;
-    
-    console.log(`🔍 Verificando cliente com telefone: ${telefoneNumerico}`);
-    
-    const telefoneLabel = document.querySelector('label[for="telefone"]');
-    if (telefoneLabel) {
-        const existingLoader = document.getElementById('clienteLoader');
-        if (!existingLoader) {
-            const loaderSpan = document.createElement('span');
-            loaderSpan.id = 'clienteLoader';
-            loaderSpan.innerHTML = ' <i class="fa-solid fa-spinner fa-spin"></i> Buscando...';
-            loaderSpan.style.fontSize = '0.7rem';
-            loaderSpan.style.marginLeft = '8px';
-            telefoneLabel.appendChild(loaderSpan);
-        }
-    }
-    
-    try {
-        const cliente = await buscarClientePorTelefone(telefone);
-        
-        const loader = document.getElementById('clienteLoader');
-        if (loader) loader.remove();
-        
-        if (cliente) {
-            console.log("🎯 Cliente encontrado! Preenchendo dados automaticamente:", cliente.nome);
-            
-            if (nomeInput && cliente.nome) {
-                nomeInput.value = cliente.nome;
-                nomeInput.style.borderColor = "#10b981";
-                setTimeout(() => {
-                    nomeInput.style.borderColor = "";
-                }, 2000);
-            }
-            
-            if (emailInput && cliente.email) {
-                emailInput.value = cliente.email;
-                emailInput.style.borderColor = "#10b981";
-                setTimeout(() => {
-                    emailInput.style.borderColor = "";
-                }, 2000);
-            }
-            
-            if (dataNascimentoInput && cliente.nascimento) {
-                dataNascimentoInput.value = cliente.nascimento;
-                dataNascimentoInput.style.borderColor = "#10b981";
-                setTimeout(() => {
-                    dataNascimentoInput.style.borderColor = "";
-                }, 2000);
-            }
-            
-            const clienteNome = cliente.nome.split(' ')[0];
-            const totalAgendamentos = cliente.totalAgendamentos || 0;
-            
-            if (totalAgendamentos > 0) {
-                mostrarMensagem(`🎉 Bem-vindo de volta, ${clienteNome}! Seus dados foram preenchidos automaticamente.`, "sucesso");
-            } else {
-                mostrarMensagem(`✨ Olá ${clienteNome}! Seus dados foram carregados.`, "sucesso");
-            }
-            
-            if (cliente.nascimento) {
-                const hoje = new Date();
-                const nascimento = new Date(cliente.nascimento);
-                if (nascimento.getMonth() === hoje.getMonth() && nascimento.getDate() === hoje.getDate()) {
-                    mostrarMensagem(`🎂🎉 FELIZ ANIVERSÁRIO, ${clienteNome.toUpperCase()}! 🎉🎂 Você ganha 10% de desconto hoje!`, "sucesso");
-                    
-                    setTimeout(() => {
-                        aplicarDescontoAniversario();
-                    }, 500);
-                }
-            }
-            
-            verificarCamposPreenchidos();
-            
-        } else {
-            console.log("📝 Cliente não encontrado. Novo cliente será cadastrado.");
-        }
-        
-    } catch (error) {
-        console.error("Erro ao auto preencher dados:", error);
-        const loader = document.getElementById('clienteLoader');
-        if (loader) loader.remove();
-    }
-}
-
-function aplicarDescontoAniversario() {
-    if (!pacoteAtual) {
-        let totalAtual = 0;
-        document.querySelectorAll('.servico-select').forEach(select => {
-            const selectedOption = select.options[select.selectedIndex];
-            const preco = parseFloat(selectedOption?.getAttribute('data-preco') || 0);
-            totalAtual += preco;
-        });
-        
-        if (totalAtual > 0) {
-            const desconto = totalAtual * 0.10;
-            const novoTotal = totalAtual - desconto;
-            
-            if (valorTotalServicosSpan) {
-                valorTotalServicosSpan.innerHTML = `${formatarMoeda(novoTotal)} <span style="font-size: 0.65rem; color: #10b981; margin-left: 8px;">(10% OFF - Aniversário!)</span>`;
-                valorTotalServicosSpan.style.color = '#10b981';
-                setTimeout(() => {
-                    valorTotalServicosSpan.style.color = '';
-                }, 5000);
-            }
-            
-            mostrarMensagem(`🎂 Desconto de aniversário de 10% aplicado! De ${formatarMoeda(totalAtual)} por ${formatarMoeda(novoTotal)}`, "sucesso");
-        }
-    }
-}
-
-async function buscarAgendamentosCliente(telefone) {
-    if (!telefone) return [];
-    
-    const telefoneNumerico = telefone.replace(/\D/g, "");
-    if (telefoneNumerico.length < 10) return [];
-    
-    try {
-        const cliente = await buscarClientePorTelefone(telefone);
-        if (!cliente) return [];
-        
-        const agendamentosRef = collection(db, "agendamentos");
-        const q = query(agendamentosRef, where("clienteId", "==", cliente.id), orderBy("dataCriacao", "desc"));
-        const snapshot = await getDocs(q);
-        
-        const agendamentos = [];
-        snapshot.forEach(doc => {
-            agendamentos.push({ id: doc.id, ...doc.data() });
-        });
-        
-        console.log(`📋 Encontrados ${agendamentos.length} agendamentos para o cliente ${cliente.nome}`);
-        return agendamentos;
-        
-    } catch (error) {
-        console.error("Erro ao buscar agendamentos do cliente:", error);
-        return [];
-    }
-}
-
-async function mostrarHistoricoCliente() {
-    const telefone = telefoneInput?.value || "";
-    const telefoneNumerico = telefone.replace(/\D/g, "");
-    
-    if (telefoneNumerico.length < 10) return;
-    
-    const agendamentos = await buscarAgendamentosCliente(telefone);
-    
-    if (agendamentos.length === 0) return;
-    
-    let historicoDiv = document.getElementById('historicoCliente');
-    if (!historicoDiv) {
-        historicoDiv = document.createElement('div');
-        historicoDiv.id = 'historicoCliente';
-        historicoDiv.className = 'historico-cliente';
-        historicoDiv.style.cssText = `
-            background: rgba(33, 153, 239, 0.05);
-            border-radius: 16px;
-            padding: 12px;
-            margin-top: 10px;
-            margin-bottom: 16px;
-            font-size: 0.75rem;
-            border-left: 3px solid #2199EF;
-        `;
-        
-        const telefoneGroup = document.querySelector('.input-group input#telefone')?.closest('.input-group');
-        if (telefoneGroup && telefoneGroup.parentNode) {
-            telefoneGroup.parentNode.insertBefore(historicoDiv, telefoneGroup.nextSibling);
-        }
-    }
-    
-    const ultimosAgendamentos = agendamentos.slice(0, 3);
-    const totalRealizados = agendamentos.filter(a => a.status === 'concluido').length;
-    const totalGasto = agendamentos
-        .filter(a => a.status === 'concluido')
-        .reduce((sum, a) => sum + (a.valor || a.valorTotal || 0), 0);
-    
-    historicoDiv.innerHTML = `
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-            <span><i class="fa-solid fa-history" style="color: #2199EF;"></i> <strong>Histórico de Atendimentos</strong></span>
-            <span style="font-size: 0.65rem; color: #10b981;">${totalRealizados} atendimento(s)</span>
-        </div>
-        <div style="margin-bottom: 8px;">
-            <span style="font-size: 0.65rem; color: #64748b;">💰 Total gasto: ${formatarMoeda(totalGasto)}</span>
-        </div>
-        ${ultimosAgendamentos.length > 0 ? `
-            <div style="font-size: 0.65rem; color: #64748b;">
-                <i class="fa-regular fa-clock"></i> Últimos atendimentos:
-            </div>
-            <div style="margin-top: 6px;">
-                ${ultimosAgendamentos.map(a => {
-                    const data = a.data || '';
-                    const servico = a.servicos?.[0]?.nome || a.servicoNome || 'Serviço';
-                    const status = a.status === 'concluido' ? '✅' : (a.status === 'confirmado' ? '⏳' : '❌');
-                    return `<div style="display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
-                        <span>${status} ${servico}</span>
-                        <span style="color: #2199EF;">${data}</span>
-                    </div>`;
-                }).join('')}
-            </div>
-        ` : ''}
-    `;
-    
-    historicoDiv.style.display = 'block';
-}
-
-function removerHistoricoCliente() {
-    const historicoDiv = document.getElementById('historicoCliente');
-    if (historicoDiv) {
-        historicoDiv.remove();
-    }
 }
 
 // ==================== FUNÇÃO PARA PROCESSAR SERVIÇO DA URL ====================
@@ -925,7 +960,7 @@ function configurarEventosServicos() {
     });
 }
 
-// ==================== FUNÇÃO DE CLIENTE ====================
+// ==================== FUNÇÃO DE CLIENTE CORRIGIDA (USA CLIENTE SELECIONADO) ====================
 async function salvarOuAtualizarCliente(dadosCliente) {
     try {
         const { nome, telefone, email, dataNascimento } = dadosCliente;
@@ -943,46 +978,54 @@ async function salvarOuAtualizarCliente(dadosCliente) {
         }
         
         const telefoneNumerico = telefone.replace(/\D/g, "");
-        console.log("📱 Buscando cliente - Nome:", nome, "| Telefone:", telefoneNumerico);
-        
-        const clientesRef = collection(db, "clientes");
-        
-        let clienteExistente = null;
-        const qTelefone = query(clientesRef, where("telefoneNumerico", "==", telefoneNumerico));
-        const snapshotTelefone = await getDocs(qTelefone);
-        
-        if (!snapshotTelefone.empty) {
-            clienteExistente = snapshotTelefone.docs[0];
-        } else {
-            const qNome = query(clientesRef, where("nome", "==", nome));
-            const snapshotNome = await getDocs(qNome);
-            for (const doc of snapshotNome.docs) {
-                if (doc.data().telefoneNumerico === telefoneNumerico) {
-                    clienteExistente = doc;
-                    break;
-                }
-            }
-        }
+        console.log("📱 Processando cliente - Nome:", nome, "| Telefone:", telefoneNumerico);
         
         let clienteId = null;
         const now = Timestamp.now();
+        
+        // Se já temos um cliente selecionado (via modal ou match exato), usar ele
+        if (clienteSelecionadoParaAgendamento && clienteSelecionadoParaAgendamento.id) {
+            console.log("✅ Usando cliente pré-selecionado:", clienteSelecionadoParaAgendamento.nome);
+            clienteId = clienteSelecionadoParaAgendamento.id;
+            
+            const clienteRef = doc(db, "clientes", clienteId);
+            const clienteSnap = await getDoc(clienteRef);
+            
+            if (clienteSnap.exists()) {
+                const dadosAtuais = clienteSnap.data();
+                await updateDoc(clienteRef, {
+                    totalAgendamentos: (dadosAtuais.totalAgendamentos || 0) + 1,
+                    ultimoAtendimento: now,
+                    atualizadoEm: now,
+                    email: email || dadosAtuais.email || "",
+                    nascimento: dataNascimento || dadosAtuais.nascimento || ""
+                });
+                
+                console.log("✅ Cliente atualizado! Total de agendamentos agora:", (dadosAtuais.totalAgendamentos || 0) + 1);
+                mostrarMensagem(`✅ Bem-vindo de volta, ${dadosAtuais.nome}! Seu agendamento foi confirmado.`, "sucesso");
+                
+                return clienteId;
+            }
+        }
+        
+        // Buscar cliente por telefone + nome (para casos onde não foi pré-selecionado)
+        const clienteExistente = await buscarClientePorTelefoneENome(telefone, nome);
         
         if (clienteExistente) {
             console.log("✅ Cliente encontrado, atualizando...", clienteExistente.id);
             clienteId = clienteExistente.id;
             const clienteRef = doc(db, "clientes", clienteId);
             
-            const dadosAtuais = clienteExistente.data();
             await updateDoc(clienteRef, {
-                totalAgendamentos: (dadosAtuais.totalAgendamentos || 0) + 1,
+                totalAgendamentos: (clienteExistente.totalAgendamentos || 0) + 1,
                 ultimoAtendimento: now,
                 atualizadoEm: now,
-                email: email || dadosAtuais.email || "",
-                nascimento: dataNascimento || dadosAtuais.nascimento || ""
+                email: email || clienteExistente.email || "",
+                nascimento: dataNascimento || clienteExistente.nascimento || ""
             });
             
-            console.log("✅ Cliente atualizado! Total de agendamentos agora:", (dadosAtuais.totalAgendamentos || 0) + 1);
-            mostrarMensagem(`✅ Bem-vindo de volta, ${nome}! Seu agendamento foi confirmado.`, "sucesso");
+            console.log("✅ Cliente atualizado! Total de agendamentos agora:", (clienteExistente.totalAgendamentos || 0) + 1);
+            mostrarMensagem(`✅ Bem-vindo de volta, ${clienteExistente.nome}! Seu agendamento foi confirmado.`, "sucesso");
             
         } else {
             console.log("🆕 Cliente não encontrado. Criando novo cliente...");
@@ -1007,15 +1050,6 @@ async function salvarOuAtualizarCliente(dadosCliente) {
             clienteId = docRef.id;
             console.log("✅ Novo cliente criado com ID:", clienteId);
             mostrarMensagem(`✅ Cliente ${nome} cadastrado com sucesso!`, "sucesso");
-        }
-        
-        if (clienteId) {
-            const checkDoc = await getDoc(doc(db, "clientes", clienteId));
-            if (checkDoc.exists()) {
-                console.log("✅ Verificação: Cliente existe no Firebase!");
-            } else {
-                console.error("❌ ERRO: Cliente não foi persistido!");
-            }
         }
         
         return clienteId;
@@ -1133,8 +1167,7 @@ function configurarDataMinima() {
     dataInput.min = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
 }
 
-// ==================== ATUALIZAR HORÁRIOS (VERSÃO CORRIGIDA DEFINITIVA) ====================
-// CORREÇÃO: TODO agendamento existente bloqueia o horário para evitar dupla reserva
+// ==================== ATUALIZAR HORÁRIOS ====================
 async function atualizarHorarios() {
     const data = dataInput.value;
     const profissionalId = profissionalSelect?.value;
@@ -1169,36 +1202,24 @@ async function atualizarHorarios() {
     horariosDiv.innerHTML = '<div class="loading-horarios"><i class="fas fa-spinner fa-spin"></i> Verificando horários disponíveis...</div>';
     
     try {
-        // Buscar TODOS os agendamentos do dia para este profissional
         const agendamentosRef = collection(db, "agendamentos");
-        
-        // Criar múltiplas queries para garantir que encontramos todos
         const queries = [];
         
-        // Query por profissionalId
         if (profissionalId) {
             queries.push(query(agendamentosRef, where("data", "==", data), where("profissionalId", "==", profissionalId)));
         }
-        
-        // Query por profissional (nome)
         if (profissionalNome) {
             queries.push(query(agendamentosRef, where("data", "==", data), where("profissional", "==", profissionalNome)));
         }
-        
-        // Query por profissionalId como string (caso esteja como string)
         if (profissionalId) {
             queries.push(query(agendamentosRef, where("data", "==", data), where("profissionalId", "==", String(profissionalId))));
         }
         
         const todosAgendamentos = [];
-        
         for (const q of queries) {
             const snapshot = await getDocs(q);
-            console.log(`📊 Query retornou ${snapshot.size} resultados`);
-            
             snapshot.forEach(doc => {
                 const agendamento = { id: doc.id, ...doc.data() };
-                // Evitar duplicatas
                 if (!todosAgendamentos.find(a => a.id === agendamento.id)) {
                     todosAgendamentos.push(agendamento);
                 }
@@ -1207,26 +1228,11 @@ async function atualizarHorarios() {
         
         console.log(`📊 TOTAL de agendamentos únicos encontrados: ${todosAgendamentos.length}`);
         
-        // IMPORTANTE: TODO agendamento existente bloqueia o horário
-        // Independente do status, pois se já teve um atendimento naquele horário,
-        // não pode ser agendado novamente (evita dupla reserva)
         const horariosOcupados = [];
-        
         for (const agendamento of todosAgendamentos) {
             const horario = agendamento.horario;
-            const horarioFim = agendamento.horarioFim;
-            
-            console.log(`\n--- Agendamento encontrado ---`);
-            console.log(`  ID: ${agendamento.id}`);
-            console.log(`  Status: ${agendamento.status}`);
-            console.log(`  Horário: ${horario}`);
-            console.log(`  Horário Fim: ${horarioFim}`);
-            console.log(`  Cliente: ${agendamento.cliente || agendamento.nome}`);
-            
             if (horario) {
                 let duracaoAgendamento = agendamento.duracaoTotal || 60;
-                
-                // Calcular duração baseada nos serviços se disponível
                 if (agendamento.servicos && agendamento.servicos.length > 0 && !agendamento.duracaoTotal) {
                     duracaoAgendamento = 0;
                     agendamento.servicos.forEach(servico => {
@@ -1234,24 +1240,14 @@ async function atualizarHorarios() {
                         duracaoAgendamento += servicoCompleto?.duracao || 60;
                     });
                 }
-                
                 horariosOcupados.push({
                     horario: horario,
                     duracaoTotal: duracaoAgendamento,
-                    status: agendamento.status,
-                    id: agendamento.id,
-                    horarioFim: horarioFim
+                    status: agendamento.status
                 });
-                
-                console.log(`  🔒 BLOQUEANDO - Horário ${horario} está OCUPADO (status: ${agendamento.status})`);
-            } else {
-                console.log(`  ⚠️ Agendamento sem horário definido`);
             }
         }
         
-        console.log(`\n📊 Total de horários ocupados que BLOQUEIAM: ${horariosOcupados.length}`);
-        
-        // Buscar bloqueios manuais
         const bloqueios = await buscarBloqueios(data, profissionalId);
         const temBloqueioDiaInteiro = bloqueios.some(b => b.tipo === "dia" || b.tipo === "periodo");
         
@@ -1267,7 +1263,6 @@ async function atualizarHorarios() {
             return;
         }
         
-        // Horários bloqueados manualmente
         const horariosBloqueadosManualmente = new Set();
         for (const bloqueio of bloqueios) {
             if (bloqueio.tipo === "horario" && bloqueio.horario) {
@@ -1279,42 +1274,26 @@ async function atualizarHorarios() {
         const horariosDisponiveis = [];
         const horariosIndisponiveis = [];
         
-        console.log(`\n📋 Verificando cada horário da lista (${infoAtendimento.horarios.length} horários totais)...`);
-        
         for (const horarioBase of infoAtendimento.horarios) {
-            console.log(`\n--- Verificando horário: ${horarioBase} ---`);
-            
-            // Verificar bloqueio manual
             if (horariosBloqueadosManualmente.has(horarioBase)) {
                 horariosIndisponiveis.push(horarioBase);
-                console.log(`  ⚠️ INDISPONÍVEL (bloqueio manual)`);
                 continue;
             }
             
             const inicioMinutos = horarioParaMinutos(horarioBase);
             const fimMinutos = inicioMinutos + duracaoTotal;
             
-            // Verificar se ultrapassa o horário limite
             if (fimMinutos > limiteMinutos) {
                 horariosIndisponiveis.push(horarioBase);
-                console.log(`  ⚠️ INDISPONÍVEL (ultrapassa limite ${HORARIO_LIMITE})`);
                 continue;
             }
             
-            // Verificar conflito com horários ocupados
             let conflito = false;
-            let motivoConflito = "";
-            
             for (const ocupado of horariosOcupados) {
                 const ocupadoInicio = horarioParaMinutos(ocupado.horario);
                 const ocupadoFim = ocupadoInicio + (ocupado.duracaoTotal || 60);
-                
                 if (inicioMinutos < ocupadoFim && fimMinutos > ocupadoInicio) {
                     conflito = true;
-                    motivoConflito = `Conflito com ${ocupado.horario} (${ocupado.status})`;
-                    console.log(`  ⚠️ INDISPONÍVEL - ${motivoConflito}`);
-                    console.log(`     Seu horário: ${horarioBase} (${inicioMinutos}min - ${fimMinutos}min)`);
-                    console.log(`     Ocupado: ${ocupado.horario} (${ocupadoInicio}min - ${ocupadoFim}min)`);
                     break;
                 }
             }
@@ -1323,13 +1302,8 @@ async function atualizarHorarios() {
                 horariosIndisponiveis.push(horarioBase);
             } else {
                 horariosDisponiveis.push(horarioBase);
-                console.log(`  ✅ DISPONÍVEL`);
             }
         }
-        
-        console.log(`\n📊 RESULTADO FINAL:`);
-        console.log(`   ✅ Disponíveis: ${horariosDisponiveis.length}`);
-        console.log(`   ❌ Indisponíveis: ${horariosIndisponiveis.length}`);
         
         renderizarHorarios(horariosDisponiveis, horariosIndisponiveis, infoAtendimento, duracaoTotal);
         
@@ -1339,7 +1313,6 @@ async function atualizarHorarios() {
     }
 }
 
-// CORREÇÃO V2: Renderizar horários mostrando APENAS o horário de início
 function renderizarHorarios(horariosDisponiveis = [], horariosIndisponiveis = [], infoAtendimento, duracaoTotal) {
     const nomeDia = getNomeDiaSemana(dataInput.value);
     
@@ -1380,12 +1353,7 @@ function renderizarHorarios(horariosDisponiveis = [], horariosIndisponiveis = []
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "horario-btn";
-        
-        // CORREÇÃO: Mostrar apenas o horário de início, sem o horário de término
-        // A duração continua sendo usada internamente para validação de conflitos
         btn.textContent = hora;
-        
-        // Tooltip opcional com informação da duração (aparece ao passar o mouse)
         btn.title = `Duração do serviço: ${duracaoFormatada}`;
         
         btn.onclick = () => {
@@ -1484,9 +1452,7 @@ if (form) {
         
         const duracaoTotal = calcularDuracaoTotal();
         
-        // Verificar se horário está bloqueado antes de prosseguir
         if (data && horario && profissionalId) {
-            // Verificar se já existe um agendamento neste horário
             const agendamentosRef = collection(db, "agendamentos");
             const q = query(
                 agendamentosRef, 
@@ -1502,7 +1468,6 @@ if (form) {
                 return;
             }
             
-            // Verificar bloqueios manuais
             const isBloqueado = await isHorarioBloqueado(data, horario, profissionalId);
             if (isBloqueado) {
                 mostrarMensagem("❌ Este horário não está mais disponível. Por favor, selecione outro horário.", "erro");
@@ -1622,6 +1587,9 @@ if (form) {
             mostrarMensagem("✅ Agendamento criado! Redirecionando para pagamento...", "sucesso");
             setTimeout(() => redirecionarParaPagamento(agendamentoId), 1500);
             
+            // Resetar cliente selecionado após agendamento
+            clienteSelecionadoParaAgendamento = null;
+            
         } catch (error) {
             console.error("Erro ao processar:", error);
             mostrarMensagem("Erro ao processar seu agendamento. Tente novamente.", "erro");
@@ -1648,23 +1616,38 @@ if (telefoneInput) {
         e.target.value = formatarTelefone(e.target.value);
         verificarCamposPreenchidos();
         
-        clearTimeout(window.telefoneDebounce);
-        window.telefoneDebounce = setTimeout(() => {
-            autoPreencherDadosCliente();
-        }, 800);
+        // Debounce para processar telefone
+        clearTimeout(debounceTimeout);
+        const telefone = e.target.value;
+        if (telefone.replace(/\D/g, "").length >= 10) {
+            debounceTimeout = setTimeout(() => {
+                processarTelefoneCliente(telefone);
+            }, 800);
+        } else {
+            // Limpar seleção se telefone for inválido
+            clienteSelecionadoParaAgendamento = null;
+        }
     });
     
     telefoneInput.addEventListener('blur', () => {
-        autoPreencherDadosCliente();
-        mostrarHistoricoCliente();
-    });
-    
-    telefoneInput.addEventListener('focus', () => {
-        if (!telefoneInput.value) {
-            removerHistoricoCliente();
+        const telefone = telefoneInput.value;
+        if (telefone.replace(/\D/g, "").length >= 10) {
+            processarTelefoneCliente(telefone);
         }
     });
 }
+
+// Fechar modal ao clicar no botão
+if (btnFecharModal) {
+    btnFecharModal.addEventListener('click', fecharModal);
+}
+
+// Fechar modal ao clicar fora
+window.addEventListener('click', (e) => {
+    if (modalSelecionarCliente && e.target === modalSelecionarCliente) {
+        fecharModal();
+    }
+});
 
 if (servicosContainer && !pacoteAtual) {
     const observer = new MutationObserver(() => { 
@@ -1685,7 +1668,4 @@ console.log("✅ agendamento.js carregado com sucesso!");
 console.log("📋 Horários Segunda à Quarta:", horariosSegundaQuarta);
 console.log("📋 Horários Quinta à Sábado:", horariosQuintaSabado);
 console.log("🔒 Sistema de bloqueios integrado!");
-console.log("⏱️ Sistema de duração de serviços integrado!");
-console.log("🔓 CORREÇÃO DEFINITIVA: TODO agendamento existente BLOQUEIA o horário!");
-console.log("🔓 Isso evita dupla reserva e overbooking!");
-console.log("🎯 CORREÇÃO V2: Horários exibem apenas o horário de início!");
+console.log("👨‍👦 MODAL para seleção de múltiplos clientes com mesmo telefone!");
