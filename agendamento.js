@@ -1,6 +1,7 @@
 // agendamento.js - Versão CORRIGIDA DEFINITIVA
 // CORREÇÃO: TODO agendamento existente bloqueia o horário para evitar dupla reserva
 // Independente do status (confirmado, concluido, cancelado, etc)
+// CORREÇÃO V2: Horários exibem apenas o horário de início (mantendo sincronização com duração)
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { 
@@ -22,8 +23,7 @@ import {
     onAuthStateChanged 
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
-// CONFIGURAÇÕES DE DADOS
-
+//CONFIGURAÇÕES DE DADOS
 const firebaseConfig = {
     apiKey: "AIzaSyC5xXm9T2nzh6xxZ5-zrMHfCNdqQOG8SZI",
     authDomain: "studio-nogueira-e07bb.firebaseapp.com",
@@ -1339,6 +1339,7 @@ async function atualizarHorarios() {
     }
 }
 
+// CORREÇÃO V2: Renderizar horários mostrando APENAS o horário de início
 function renderizarHorarios(horariosDisponiveis = [], horariosIndisponiveis = [], infoAtendimento, duracaoTotal) {
     const nomeDia = getNomeDiaSemana(dataInput.value);
     
@@ -1380,11 +1381,13 @@ function renderizarHorarios(horariosDisponiveis = [], horariosIndisponiveis = []
         btn.type = "button";
         btn.className = "horario-btn";
         
-        const inicioMinutos = horarioParaMinutos(hora);
-        const fimMinutos = inicioMinutos + duracaoTotal;
-        const horarioFim = minutosParaHorario(fimMinutos);
+        // CORREÇÃO: Mostrar apenas o horário de início, sem o horário de término
+        // A duração continua sendo usada internamente para validação de conflitos
+        btn.textContent = hora;
         
-        btn.textContent = `${hora} → ${horarioFim}`;
+        // Tooltip opcional com informação da duração (aparece ao passar o mouse)
+        btn.title = `Duração do serviço: ${duracaoFormatada}`;
+        
         btn.onclick = () => {
             document.querySelectorAll(".horario-btn").forEach(b => b.classList.remove("selecionado"));
             btn.classList.add("selecionado");
@@ -1685,3 +1688,4 @@ console.log("🔒 Sistema de bloqueios integrado!");
 console.log("⏱️ Sistema de duração de serviços integrado!");
 console.log("🔓 CORREÇÃO DEFINITIVA: TODO agendamento existente BLOQUEIA o horário!");
 console.log("🔓 Isso evita dupla reserva e overbooking!");
+console.log("🎯 CORREÇÃO V2: Horários exibem apenas o horário de início!");
