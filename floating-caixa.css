@@ -1,10 +1,18 @@
 /* floating-caixa.css - Estilos globais do botão flutuante */
+/* CORRIGIDO: Botão não corta mais o saldo em mobile */
 
 /* ==================== BOTÃO FLUTUANTE DO CAIXA ==================== */
-.floating-caixa-btn {
+.floating-caixa-container {
     position: fixed;
     bottom: 30px;
     right: 30px;
+    z-index: 999999;
+    /* Garantir espaço para o saldo */
+    min-height: 100px;
+}
+
+.floating-caixa-btn {
+    position: relative;
     width: 65px;
     height: 65px;
     border-radius: 50%;
@@ -19,6 +27,9 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    margin: 0;
+    /* Garantir que o botão não corte conteúdo */
+    overflow: visible;
 }
 
 .floating-caixa-btn.has-caixa-fechado {
@@ -78,6 +89,10 @@
     pointer-events: none;
     z-index: 999999;
     line-height: 1.2;
+    /* Garantir que não seja cortado */
+    display: block;
+    min-width: 70px;
+    text-align: center;
 }
 
 .floating-caixa-saldo.saldo-negativo {
@@ -299,6 +314,12 @@
 
 /* Responsividade para Desktop médio */
 @media (max-width: 1024px) {
+    .floating-caixa-container {
+        bottom: 25px;
+        right: 25px;
+        min-height: 95px;
+    }
+    
     .floating-caixa-btn {
         bottom: 25px;
         right: 25px;
@@ -315,6 +336,12 @@
 
 /* Responsividade para Tablets */
 @media (max-width: 768px) {
+    .floating-caixa-container {
+        bottom: 20px;
+        right: 20px;
+        min-height: 90px;
+    }
+    
     .floating-caixa-btn {
         bottom: 20px;
         right: 20px;
@@ -333,6 +360,7 @@
         font-size: 0.65rem;
         padding: 3px 8px;
         bottom: -28px;
+        min-width: 65px;
     }
     
     .preview-actions button {
@@ -341,14 +369,24 @@
     }
 }
 
-/* Responsividade para Mobile */
+/* Responsividade para Mobile - CORREÇÃO PRINCIPAL */
 @media (max-width: 480px) {
+    .floating-caixa-container {
+        bottom: 15px;
+        right: 15px;
+        min-height: 85px;
+        /* Garantir que o container tenha altura suficiente */
+        padding-bottom: 10px;
+    }
+    
     .floating-caixa-btn {
         bottom: 15px;
         right: 15px;
         width: 50px;
         height: 50px;
         font-size: 1.2rem;
+        /* Garantir que o botão não corte o conteúdo filho */
+        overflow: visible;
     }
     
     .floating-caixa-preview {
@@ -358,9 +396,14 @@
     }
     
     .floating-caixa-saldo {
-        font-size: 0.6rem;
+        font-size: 0.62rem;
         padding: 3px 8px;
-        bottom: -26px;
+        bottom: -28px;
+        min-width: 60px;
+        /* Garantir que o texto não quebre */
+        white-space: nowrap;
+        /* Adicionar margem negativa para compensar */
+        margin-bottom: 0;
     }
     
     .preview-saldo span:last-child,
@@ -384,6 +427,36 @@
     .btn-preview-atendimento i,
     .btn-preview-caixa i {
         font-size: 0.7rem;
+    }
+}
+
+/* Correção adicional para telas muito pequenas */
+@media (max-width: 380px) {
+    .floating-caixa-container {
+        bottom: 12px;
+        right: 12px;
+        min-height: 80px;
+    }
+    
+    .floating-caixa-btn {
+        bottom: 12px;
+        right: 12px;
+        width: 48px;
+        height: 48px;
+        font-size: 1.1rem;
+    }
+    
+    .floating-caixa-preview {
+        bottom: 75px;
+        right: 12px;
+        width: 250px;
+    }
+    
+    .floating-caixa-saldo {
+        font-size: 0.58rem;
+        padding: 2px 6px;
+        bottom: -26px;
+        min-width: 55px;
     }
 }
 
@@ -439,32 +512,9 @@ body.light .btn-preview-caixa:hover {
     color: #2199EF;
 }
 
-/* Ajustes para evitar cortes em telas muito pequenas */
-@media (max-width: 380px) {
-    .floating-caixa-btn {
-        bottom: 12px;
-        right: 12px;
-        width: 48px;
-        height: 48px;
-        font-size: 1.1rem;
-    }
-    
-    .floating-caixa-preview {
-        bottom: 75px;
-        right: 12px;
-        width: 250px;
-    }
-    
-    .floating-caixa-saldo {
-        font-size: 0.55rem;
-        padding: 2px 6px;
-        bottom: -24px;
-    }
-}
-
 /* Garantir que o botão flutuante tenha prioridade máxima */
 .floating-caixa-container {
-    position: relative;
+    position: fixed;
     z-index: 999999;
 }
 
