@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes, viewport-fit=cover">
@@ -11,21 +12,23 @@
     <link rel="stylesheet" href="bloqueios.css">
     <link rel="icon" type="image/png" href="assets/barber.icon.png">
 </head>
+
 <body>
 
     <!-- VERIFICAÇÃO DE AUTENTICAÇÃO DO ADMIN -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
         import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-
+        
+            //CONFIGURAÇÕES DE DADOS
         const firebaseConfig = {
-            apiKey: "AIzaSyCgarMuCZ4sT-VO_ldyQjyG5MB6mR6i8rU",
-            authDomain: "barbearia-softclick.firebaseapp.com",
-            projectId: "barbearia-softclick",
-            storageBucket: "barbearia-softclick.firebasestorage.app",
-            messagingSenderId: "1079307759020",
-            appId: "1:1079307759020:web:231e08fb89fcb6b1e51e09",
-            measurementId: "G-SKF0BNWEWK"
+            apiKey: "AIzaSyC5xXm9T2nzh6xxZ5-zrMHfCNdqQOG8SZI",
+            authDomain: "studio-nogueira-e07bb.firebaseapp.com",
+            projectId: "studio-nogueira-e07bb",
+            storageBucket: "studio-nogueira-e07bb.firebasestorage.app",
+            messagingSenderId: "150077330983",
+            appId: "1:150077330983:web:a49838c4cde9df4e1de002",
+            measurementId: "G-WX477KDZQC"
         };
 
         const app = initializeApp(firebaseConfig);
@@ -115,7 +118,8 @@
                     </li>
                     <li class="nav-separator">Treinamentos</li>
                     <li class="nav-item">
-                        <a href="cursos.html"><i class="fa-solid fa-graduation-cap"></i> <span>Cursos & Treinamentos</span></a>
+                        <a href="cursos.html"><i class="fa-solid fa-graduation-cap"></i> <span>Cursos &
+                                Treinamentos</span></a>
                     </li>
                     <li class="nav-separator">Administração</li>
                     <li class="nav-item">
@@ -210,7 +214,7 @@
             <form id="formBloqueio">
                 <div class="modal-body">
                     <input type="hidden" id="bloqueioId">
-                    
+
                     <div class="form-group">
                         <label><i class="fa-solid fa-tag"></i> Tipo de Bloqueio</label>
                         <select id="tipoBloqueio" required>
@@ -248,7 +252,8 @@
                         <div class="form-group">
                             <label><i class="fa-solid fa-clock"></i> Horários</label>
                             <div id="horariosMultiplos" class="horarios-checkboxes"></div>
-                            <small style="color: var(--text-muted); font-size: 0.7rem; display: block; margin-top: 6px;">
+                            <small
+                                style="color: var(--text-muted); font-size: 0.7rem; display: block; margin-top: 6px;">
                                 Selecione um ou mais horários para bloquear
                             </small>
                         </div>
@@ -262,11 +267,13 @@
 
                     <div class="form-group">
                         <label><i class="fa-solid fa-note-sticky"></i> Motivo (opcional)</label>
-                        <textarea id="motivoBloqueio" rows="2" placeholder="Ex: Feriado, Manutenção, Fechamento extraordinário..."></textarea>
+                        <textarea id="motivoBloqueio" rows="2"
+                            placeholder="Ex: Feriado, Manutenção, Fechamento extraordinário..."></textarea>
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn-bloqueio btn-bloqueio-secondary" onclick="closeModal()">Cancelar</button>
+                    <button type="button" class="btn-bloqueio btn-bloqueio-secondary"
+                        onclick="closeModal()">Cancelar</button>
                     <button type="submit" class="btn-bloqueio">Salvar Bloqueio</button>
                 </div>
             </form>
@@ -296,7 +303,7 @@
         }
 
         // Mobile menu
-        (function() {
+        (function () {
             const mobileMenuBtn = document.getElementById('mobileMenuBtn');
             const closeSidebarBtn = document.getElementById('closeSidebarBtn');
             const sidebar = document.getElementById('sidebar');
@@ -323,11 +330,12 @@
                     link.addEventListener('click', closeMenu);
                 });
 
-                window.addEventListener('resize', function() {
+                window.addEventListener('resize', function () {
                     if (window.innerWidth > 768) closeMenu();
                 });
             }
         })();
     </script>
 </body>
+
 </html>
