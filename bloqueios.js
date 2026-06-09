@@ -1,5 +1,4 @@
 // bloqueios.js - Gerenciamento de bloqueios de agenda para admin
-// Versão com suporte a modo demonstração quando Firebase está bloqueado
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { 
@@ -23,7 +22,7 @@ const firebaseConfig = {
     messagingSenderId: "150077330983",
     appId: "1:150077330983:web:a49838c4cde9df4e1de002",
     measurementId: "G-WX477KDZQC"
-};
+  };
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
@@ -57,88 +56,11 @@ const logoutBtn = document.getElementById("logout");
 
 let profissionais = [];
 let todosBloqueios = [];
-let modoDemonstracao = false;
 
-// Mostrar notificação
+// Mostrar notificação - REMOVIDA (apenas log no console)
 function mostrarNotificacao(mensagem, tipo = "sucesso") {
+    // Notificação removida - apenas log no console
     console.log(`[${tipo.toUpperCase()}] ${mensagem}`);
-    
-    // Mostrar notificação visual
-    const notificacao = document.getElementById("notificacao");
-    if (notificacao) {
-        const icon = notificacao.querySelector("i");
-        const span = notificacao.querySelector("span");
-        
-        if (tipo === "erro") {
-            icon.className = "fa-solid fa-circle-exclamation";
-            notificacao.style.background = "linear-gradient(135deg, #ef4444, #dc2626)";
-        } else if (tipo === "sucesso") {
-            icon.className = "fa-solid fa-circle-check";
-            notificacao.style.background = "linear-gradient(135deg, #10b981, #059669)";
-        } else {
-            icon.className = "fa-solid fa-bell";
-            notificacao.style.background = "linear-gradient(135deg, #f59e0b, #d97706)";
-        }
-        
-        span.textContent = mensagem;
-        notificacao.style.display = "flex";
-        
-        setTimeout(() => {
-            notificacao.style.display = "none";
-        }, 3000);
-    }
-}
-
-// Dados de exemplo para demonstração
-function carregarDadosDemonstracao() {
-    console.log("📱 Executando em MODO DEMONSTRAÇÃO");
-    modoDemonstracao = true;
-    
-    const hoje = new Date();
-    const amanha = new Date(hoje);
-    amanha.setDate(hoje.getDate() + 1);
-    const depois = new Date(hoje);
-    depois.setDate(hoje.getDate() + 2);
-    
-    function formatDate(date) {
-        return date.toISOString().split('T')[0];
-    }
-    
-    todosBloqueios = [
-        {
-            id: "demo1",
-            tipo: "dia",
-            data: formatDate(amanha),
-            motivo: "Feriado municipal",
-            ativo: true,
-            criadoEm: { toDate: () => new Date() },
-            isAtivo: true
-        },
-        {
-            id: "demo2",
-            tipo: "horario",
-            data: formatDate(hoje),
-            horario: "14:00",
-            motivo: "Manutenção",
-            profissionalId: null,
-            ativo: true,
-            criadoEm: { toDate: () => new Date() },
-            isAtivo: true
-        },
-        {
-            id: "demo3",
-            tipo: "periodo",
-            dataInicio: formatDate(new Date(2024, 11, 20)),
-            dataFim: formatDate(new Date(2024, 11, 25)),
-            motivo: "Recesso de fim de ano",
-            ativo: true,
-            criadoEm: { toDate: () => new Date(2024, 10, 1) },
-            isAtivo: false
-        }
-    ];
-    
-    mostrarNotificacao("Modo demonstração ativo - Os dados não serão salvos no servidor", "aviso");
-    renderizarBloqueios();
 }
 
 // Carregar profissionais
@@ -160,35 +82,8 @@ async function carregarProfissionais() {
                 profissionalSelect.appendChild(option);
             });
         }
-        
-        if (profissionais.length === 0 && !modoDemonstracao) {
-            profissionais = [
-                { id: "prof1", nome: "João Silva" },
-                { id: "prof2", nome: "Pedro Santos" }
-            ];
-            profissionalSelect.innerHTML = '<option value="">Todos os barbeiros</option>';
-            profissionais.forEach(prof => {
-                const option = document.createElement("option");
-                option.value = prof.id;
-                option.textContent = prof.nome;
-                profissionalSelect.appendChild(option);
-            });
-        }
     } catch (error) {
         console.error("Erro ao carregar profissionais:", error);
-        profissionais = [
-            { id: "prof1", nome: "João Silva" },
-            { id: "prof2", nome: "Pedro Santos" }
-        ];
-        if (profissionalSelect) {
-            profissionalSelect.innerHTML = '<option value="">Todos os barbeiros</option>';
-            profissionais.forEach(prof => {
-                const option = document.createElement("option");
-                option.value = prof.id;
-                option.textContent = prof.nome;
-                profissionalSelect.appendChild(option);
-            });
-        }
     }
 }
 
@@ -238,7 +133,6 @@ function getDataHojeLocal() {
 async function carregarBloqueios() {
     try {
         console.log("🔄 Carregando bloqueios do Firebase...");
-        
         const bloqueiosRef = collection(db, "bloqueios");
         const q = query(bloqueiosRef, orderBy("criadoEm", "desc"));
         const snapshot = await getDocs(q);
@@ -268,40 +162,11 @@ async function carregarBloqueios() {
             });
         });
         
-        if (todosBloqueios.length === 0 && !modoDemonstracao) {
-            carregarDadosDemonstracao();
-        } else {
-            renderizarBloqueios();
-        }
-        
-        if (snapshot.size === 0 && !modoDemonstracao) {
-            mostrarNotificacao("Nenhum bloqueio encontrado. Clique em 'Novo Bloqueio' para adicionar.", "aviso");
-        }
+        renderizarBloqueios();
         
     } catch (error) {
         console.error("Erro ao carregar bloqueios:", error);
-        
-        if (error.code === 'permission-denied' || error.message.includes('permission')) {
-            mostrarNotificacao("Sem permissão para acessar o banco de dados. Ativando modo demonstração.", "erro");
-            carregarDadosDemonstracao();
-        } else {
-            mostrarNotificacao("Erro ao carregar bloqueios: " + error.message, "erro");
-            
-            const containerAtivos = document.getElementById("bloqueiosAtivos");
-            if (containerAtivos) {
-                containerAtivos.innerHTML = `
-                    <div class="empty-state">
-                        <i class="fa-solid fa-circle-exclamation"></i>
-                        <p>Erro ao carregar bloqueios</p>
-                        <small>${error.message}</small>
-                        <br><br>
-                        <button onclick="location.reload()" class="btn-bloqueio" style="margin-top: 10px;">
-                            <i class="fa-solid fa-rotate-right"></i> Tentar novamente
-                        </button>
-                    </div>
-                `;
-            }
-        }
+        mostrarNotificacao("Erro ao carregar bloqueios", "erro");
     }
 }
 
@@ -336,6 +201,7 @@ function renderizarBloqueios() {
         return true;
     });
     
+    // Ordenar ativos por data
     filtradosAtivos.sort((a, b) => {
         const dataA = a.data || a.dataInicio || '';
         const dataB = b.data || b.dataInicio || '';
@@ -376,17 +242,6 @@ function renderizarBloqueios() {
         filtradosHistorico.forEach(bloqueio => {
             containerHistorico.appendChild(criarCardBloqueio(bloqueio, false));
         });
-    }
-    
-    if (modoDemonstracao) {
-        const avisoModo = document.createElement("div");
-        avisoModo.style.cssText = "background: rgba(245,158,11,0.1); border: 1px solid #f59e0b; border-radius: 12px; padding: 12px; margin-bottom: 16px; text-align: center; font-size: 0.85rem; color: #f59e0b;";
-        avisoModo.innerHTML = '<i class="fa-solid fa-flask"></i> Modo demonstração ativo - Os dados não são persistidos no servidor';
-        if (containerAtivos.firstChild) {
-            containerAtivos.insertBefore(avisoModo, containerAtivos.firstChild);
-        } else {
-            containerAtivos.appendChild(avisoModo);
-        }
     }
 }
 
@@ -448,17 +303,6 @@ function criarCardBloqueio(bloqueio, isAtivo) {
     const deleteBtn = div.querySelector(".btn-delete");
     deleteBtn.addEventListener("click", async (e) => {
         e.stopPropagation();
-        
-        if (modoDemonstracao) {
-            const index = todosBloqueios.findIndex(b => b.id === bloqueio.id);
-            if (index !== -1) {
-                todosBloqueios.splice(index, 1);
-                renderizarBloqueios();
-                mostrarNotificacao("Bloqueio removido (modo demonstração)", "sucesso");
-            }
-            return;
-        }
-        
         const mensagem = isAtivo 
             ? "Tem certeza que deseja excluir este bloqueio ativo? O horário voltará a ficar disponível para agendamentos imediatamente."
             : "Tem certeza que deseja excluir este bloqueio do histórico?";
@@ -467,11 +311,9 @@ function criarCardBloqueio(bloqueio, isAtivo) {
             try {
                 await deleteDoc(doc(db, "bloqueios", bloqueio.id));
                 console.log("✅ Bloqueio excluído com sucesso!");
-                mostrarNotificacao("Bloqueio excluído com sucesso!", "sucesso");
                 await carregarBloqueios();
             } catch (error) {
                 console.error("Erro ao excluir bloqueio:", error);
-                mostrarNotificacao("Erro ao excluir bloqueio: " + error.message, "erro");
             }
         }
     });
@@ -495,7 +337,7 @@ function formatarDataHora(timestamp) {
         const date = timestamp.toDate();
         return date.toLocaleDateString('pt-BR') + ' ' + date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
     }
-    return "Dados de demonstração";
+    return timestamp;
 }
 
 // Configurar data mínima nos inputs
@@ -512,14 +354,6 @@ function configurarDataMinima() {
 if (formBloqueio) {
     formBloqueio.addEventListener("submit", async (e) => {
         e.preventDefault();
-        
-        if (modoDemonstracao) {
-            mostrarNotificacao("Modo demonstração: os bloqueios não são salvos no servidor", "aviso");
-            closeModal();
-            formBloqueio.reset();
-            tipoBloqueio.dispatchEvent(new Event("change"));
-            return;
-        }
         
         const tipo = tipoBloqueio.value;
         const motivo = document.getElementById("motivoBloqueio").value;
@@ -544,14 +378,13 @@ if (formBloqueio) {
             try {
                 await addDoc(collection(db, "bloqueios"), dadosBloqueio);
                 console.log("✅ Bloqueio de dia inteiro adicionado com sucesso!");
-                mostrarNotificacao("Bloqueio criado com sucesso!", "sucesso");
                 closeModal();
                 formBloqueio.reset();
                 tipoBloqueio.dispatchEvent(new Event("change"));
                 await carregarBloqueios();
             } catch (error) {
                 console.error("Erro ao salvar bloqueio:", error);
-                mostrarNotificacao("Erro ao salvar bloqueio: " + error.message, "erro");
+                alert("Erro ao salvar bloqueio");
             }
         } 
         else if (tipo === "periodo") {
@@ -572,14 +405,13 @@ if (formBloqueio) {
             try {
                 await addDoc(collection(db, "bloqueios"), dadosBloqueio);
                 console.log("✅ Bloqueio de período adicionado com sucesso!");
-                mostrarNotificacao("Bloqueio criado com sucesso!", "sucesso");
                 closeModal();
                 formBloqueio.reset();
                 tipoBloqueio.dispatchEvent(new Event("change"));
                 await carregarBloqueios();
             } catch (error) {
                 console.error("Erro ao salvar bloqueio:", error);
-                mostrarNotificacao("Erro ao salvar bloqueio: " + error.message, "erro");
+                alert("Erro ao salvar bloqueio");
             }
         }
         else if (tipo === "horario") {
@@ -618,7 +450,6 @@ if (formBloqueio) {
             
             if (sucessos > 0) {
                 console.log(`✅ ${sucessos} bloqueio(s) adicionado(s) com sucesso!`);
-                mostrarNotificacao(`${sucessos} bloqueio(s) criado(s)!`, "sucesso");
                 closeModal();
                 formBloqueio.reset();
                 tipoBloqueio.dispatchEvent(new Event("change"));
@@ -638,9 +469,6 @@ if (formBloqueio) {
 // Abrir modal para novo bloqueio
 if (btnNovoBloqueio) {
     btnNovoBloqueio.addEventListener("click", () => {
-        if (modoDemonstracao) {
-            mostrarNotificacao("Modo demonstração: os bloqueios não serão salvos", "aviso");
-        }
         const modalTitle = document.getElementById("modalTitle");
         if (modalTitle) modalTitle.textContent = "Novo Bloqueio";
         const bloqueioIdInput = document.getElementById("bloqueioId");
