@@ -1,5 +1,6 @@
 // agenda.js - Versão Corrigida com suporte a PRÉ-LANÇAMENTOS E LEMBRETES WHATSAPP
 // Com sincronização em tempo real com comandas e atualização de estoque ao concluir
+// CORREÇÃO: URL de avaliação corrigida (sem duplicação)
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
@@ -24,6 +25,7 @@ import {
     signOut
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
+//CONFIGURAÇÕES DE DADOS
 const firebaseConfig = {
     apiKey: "AIzaSyC5xXm9T2nzh6xxZ5-zrMHfCNdqQOG8SZI",
     authDomain: "studio-nogueira-e07bb.firebaseapp.com",
@@ -372,6 +374,21 @@ async function buscarTelefoneCliente(clienteId) {
         }
     } catch (error) {
         console.error("Erro ao buscar telefone do cliente:", error);
+    }
+    return null;
+}
+
+async function buscarTelefonePorNome(nomeCliente) {
+    if (!nomeCliente) return null;
+    try {
+        const clientesQuery = query(collection(db, "clientes"), where("nome", "==", nomeCliente));
+        const clientesSnap = await getDocs(clientesQuery);
+        if (!clientesSnap.empty) {
+            const dados = clientesSnap.docs[0].data();
+            return dados.telefone || dados.whatsapp || dados.celular || null;
+        }
+    } catch (error) {
+        console.error("Erro ao buscar telefone por nome:", error);
     }
     return null;
 }
@@ -926,7 +943,7 @@ async function marcarComoAusente(id, agendamento) {
     }
 }
 
-// ==================== FUNÇÃO CONCLUIR AGENDAMENTO ====================
+// ==================== FUNÇÃO CONCLUIR AGENDAMENTO (CORRIGIDA) ====================
 
 async function concluirAgendamento(id, agendamento) {
     try {
@@ -1115,10 +1132,14 @@ async function concluirAgendamento(id, agendamento) {
             console.error("❌ Erro ao criar avaliação:", error);
         }
         
-        const baseUrl = "https://barbearia-softclick.vercel.app";
+        // ==================== CORREÇÃO DA URL DE AVALIAÇÃO ====================
+        // URL correta sem duplicação
+        const baseUrl = "https://studionogueira.vercel.app";
         const clienteEncoded = encodeURIComponent(nomeCliente);
         const servicoEncoded = encodeURIComponent(servicoNome);
         const avaliacaoUrl = `${baseUrl}/avaliacao.html?agendamentoId=${id}&cliente=${clienteEncoded}&servico=${servicoEncoded}`;
+        
+        console.log("🔗 Link de avaliação gerado:", avaliacaoUrl);
         
         let telefone = agendamento.telefone ||
             agendamento.whatsapp ||
@@ -1208,7 +1229,7 @@ async function cancelarAgendamento(id, agendamento) {
         if (telefone) {
             const telefoneLimpo = telefone.toString().replace(/\D/g, "");
             if (telefoneLimpo.length >= 10 && telefoneLimpo.length <= 11) {
-                const mensagem = `*🏢 STUDIO NOGUEIRA* - *CANCELAMENTO DE AGENDAMENTO*\n\nOlá, *${nomeCliente}*!\n\nInformamos que seu agendamento foi *CANCELADO* conforme solicitado.\n\n📅 *Data original:* ${dataFormatada}\n⏰ *Horário:* ${horario}\n👨‍🦱 *Barbeiro:* ${profissional}\n\n✨ *Para remarcar seu horário*, acesse nosso link:\n🔗 https://barbeariasoftclick.vercel.app/agendar\n\nOu entre em contato conosco:\n📞 (83) 9 8661-7303\n\nAgradecemos a compreensão e estamos à disposição!\n\n*Studio Nogueira* - Mais de 10 anos transformando estilos. ✂️💈`;
+                const mensagem = `*🏢 STUDIO NOGUEIRA* - *CANCELAMENTO DE AGENDAMENTO*\n\nOlá, *${nomeCliente}*!\n\nInformamos que seu agendamento foi *CANCELADO* conforme solicitado.\n\n📅 *Data original:* ${dataFormatada}\n⏰ *Horário:* ${horario}\n👨‍🦱 *Barbeiro:* ${profissional}\n\n✨ *Para remarcar seu horário*, acesse nosso link:\n🔗 https://studionogueira.vercel.app/agendamento.html\n\nOu entre em contato conosco:\n📞 (83) 9 8661-7303\n\nAgradecemos a compreensão e estamos à disposição!\n\n*Studio Nogueira* - Mais de 10 anos transformando estilos. ✂️💈`;
 
                 window.open(`https://wa.me/55${telefoneLimpo}?text=${encodeURIComponent(mensagem)}`, '_blank');
                 mostrarToast(`❌ Agendamento cancelado! Mensagem enviada para o cliente.`, "sucesso");
@@ -1606,23 +1627,6 @@ window.enviarLembreteManual = async function(agendamentoId, tipo = 'dia') {
     }
 };
 
-// ==================== FUNÇÃO PARA BUSCAR TELEFONE POR NOME ====================
-
-async function buscarTelefonePorNome(nomeCliente) {
-    if (!nomeCliente) return null;
-    try {
-        const clientesQuery = query(collection(db, "clientes"), where("nome", "==", nomeCliente));
-        const clientesSnap = await getDocs(clientesQuery);
-        if (!clientesSnap.empty) {
-            const dados = clientesSnap.docs[0].data();
-            return dados.telefone || dados.whatsapp || dados.celular || null;
-        }
-    } catch (error) {
-        console.error("Erro ao buscar telefone por nome:", error);
-    }
-    return null;
-}
-
 // ==================== FUNÇÃO PARA MIGRAR PRÉ-LANÇAMENTOS EXISTENTES ====================
 
 window.migrarPreLancamentosExistentes = async function() {
@@ -1743,4 +1747,4 @@ onAuthStateChanged(auth, (user) => {
 const logoutBtn = document.getElementById('logout');
 if (logoutBtn) logoutBtn.onclick = async () => { await signOut(auth); window.location.href = 'login.html'; };
 
-console.log("✅ Agenda.js carregado - Agora com suporte a LEMBRETES WHATSAPP!");
+console.log("✅ Agenda.js carregado - Agora com suporte a LEMBRETES WHATSAPP e URL de avaliação corrigida!");

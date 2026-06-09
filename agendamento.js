@@ -66,7 +66,7 @@ let agendamentoEmAndamento = false;
 // ==================== HORÁRIOS POR DIA DA SEMANA ====================
 const horariosSegundaQuarta = [
     "08:20", "09:00", "09:40", "10:20", "11:00", "11:40",
-    "14:00", "14:40", "15:20", "16:00", "16:40", "17:20", "18:00"
+    "14:00", "14:40", "15:20", "16:00", "16:40", "17:20", "18:00", "18:40"
 ];
 
 const horariosQuintaSabado = [
