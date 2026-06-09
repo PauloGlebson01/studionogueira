@@ -156,6 +156,7 @@
     width: 20px;
 }
 
+/* CAMPOS CORRIGIDOS - TAMANHO PADRÃO */
 .form-group input,
 .form-group select,
 .form-group textarea {
@@ -167,6 +168,37 @@
     font-size: 0.9rem;
     color: var(--text-main);
     transition: all 0.2s;
+    box-sizing: border-box;
+}
+
+/* Garantir tamanho padrão para todos os inputs */
+input[type="date"],
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="number"],
+select,
+textarea {
+    width: 100%;
+    padding: 12px 16px;
+    font-size: 0.9rem;
+    background: var(--bg-dark);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    color: var(--text-main);
+    box-sizing: border-box;
+}
+
+/* Altura específica para campo data */
+input[type="date"] {
+    min-height: 48px;
+    cursor: pointer;
+}
+
+/* Altura específica para textarea */
+textarea {
+    min-height: 80px;
+    resize: vertical;
 }
 
 .form-group input:focus,
@@ -366,28 +398,37 @@
     border-radius: 12px;
     color: var(--text-main);
     font-size: 0.85rem;
-}
-
-.filter-bar input {
     flex: 1;
     min-width: 200px;
 }
 
+/* Notificação - Tamanho compacto */
 .notification {
     position: fixed;
     bottom: 20px;
     right: 20px;
     background: linear-gradient(135deg, #10b981, #059669);
     color: white;
-    padding: 12px 20px;
-    border-radius: 12px;
+    padding: 10px 16px;
+    border-radius: 10px;
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     z-index: 10001;
-    font-size: 0.85rem;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    font-size: 0.8rem;
+    font-weight: 500;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.2);
     animation: slideInRight 0.3s ease;
+    max-width: 300px;
+    pointer-events: none;
+}
+
+.notification i {
+    font-size: 0.9rem;
+}
+
+.notification span {
+    white-space: nowrap;
 }
 
 @keyframes slideInRight {
@@ -415,5 +456,16 @@
     .bloqueio-actions {
         width: 100%;
         justify-content: flex-end;
+    }
+    .notification {
+        bottom: 10px;
+        right: 10px;
+        left: 10px;
+        max-width: none;
+        padding: 8px 12px;
+    }
+    .notification span {
+        white-space: normal;
+        font-size: 0.75rem;
     }
 }
