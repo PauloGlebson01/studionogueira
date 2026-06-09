@@ -1,4 +1,4 @@
-// bloqueios.js - Gerenciamento de bloqueios de agenda para admin COM DIAGNÓSTICO
+// bloqueios.js - Gerenciamento de bloqueios de agenda para admin
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { 
@@ -10,7 +10,8 @@ import {
     doc, 
     query, 
     orderBy,
-    Timestamp
+    Timestamp,
+    where
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getAuth, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
@@ -22,7 +23,7 @@ const firebaseConfig = {
     messagingSenderId: "150077330983",
     appId: "1:150077330983:web:a49838c4cde9df4e1de002",
     measurementId: "G-WX477KDZQC"
-  };
+};
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
@@ -57,48 +58,20 @@ const logoutBtn = document.getElementById("logout");
 let profissionais = [];
 let todosBloqueios = [];
 
-// Mostrar notificação melhorada
+// Mostrar notificação
 function mostrarNotificacao(mensagem, tipo = "sucesso") {
     console.log(`[${tipo.toUpperCase()}] ${mensagem}`);
-    
-    // Mostrar notificação visual também
-    const notificacao = document.getElementById("notificacao");
-    if (notificacao) {
-        const icon = notificacao.querySelector("i");
-        const span = notificacao.querySelector("span");
-        
-        if (tipo === "erro") {
-            icon.className = "fa-solid fa-circle-exclamation";
-            notificacao.style.background = "linear-gradient(135deg, #ef4444, #dc2626)";
-        } else if (tipo === "sucesso") {
-            icon.className = "fa-solid fa-circle-check";
-            notificacao.style.background = "linear-gradient(135deg, #10b981, #059669)";
-        } else {
-            icon.className = "fa-solid fa-bell";
-            notificacao.style.background = "linear-gradient(135deg, #f59e0b, #d97706)";
-        }
-        
-        span.textContent = mensagem;
-        notificacao.style.display = "flex";
-        
-        setTimeout(() => {
-            notificacao.style.display = "none";
-        }, 3000);
-    }
 }
 
 // Carregar profissionais
 async function carregarProfissionais() {
     try {
-        console.log("🔍 Buscando profissionais...");
         const profissionaisRef = collection(db, "profissionais");
         const snapshot = await getDocs(profissionaisRef);
         profissionais = [];
         snapshot.forEach(doc => {
             profissionais.push({ id: doc.id, nome: doc.data().nome });
         });
-        
-        console.log(`✅ ${profissionais.length} profissionais carregados:`, profissionais);
         
         if (profissionalSelect) {
             profissionalSelect.innerHTML = '<option value="">Todos os barbeiros</option>';
@@ -109,13 +82,8 @@ async function carregarProfissionais() {
                 profissionalSelect.appendChild(option);
             });
         }
-        
-        if (profissionais.length === 0) {
-            mostrarNotificacao("Nenhum profissional encontrado. Cadastre barbeiros primeiro.", "aviso");
-        }
     } catch (error) {
-        console.error("❌ Erro ao carregar profissionais:", error);
-        mostrarNotificacao("Erro ao carregar profissionais: " + error.message, "erro");
+        console.error("Erro ao carregar profissionais:", error);
     }
 }
 
@@ -132,7 +100,6 @@ function popularHorariosMultiplos() {
         `;
         horariosMultiplos.appendChild(label);
     });
-    console.log(`✅ ${todosHorarios.length} horários disponíveis carregados`);
 }
 
 // Gerenciar campos baseado no tipo de bloqueio
@@ -162,37 +129,61 @@ function getDataHojeLocal() {
     return `${ano}-${mes}-${dia}`;
 }
 
+// Verificar e criar coleção bloqueios se necessário
+async function verificarECriarColecaoBloqueios() {
+    try {
+        const bloqueiosRef = collection(db, "bloqueios");
+        const testQuery = query(bloqueiosRef, where("__name__", ">=", ""), limit(1));
+        const testSnapshot = await getDocs(testQuery);
+        
+        if (testSnapshot.empty) {
+            console.log("📝 Criando documento inicial para coleção bloqueios...");
+            const docInicial = {
+                tipo: "dia",
+                data: getDataHojeLocal(),
+                motivo: "Sistema inicializado",
+                ativo: true,
+                criadoEm: Timestamp.now(),
+                criadoPor: "system",
+                sistema: true
+            };
+            await addDoc(collection(db, "bloqueios"), docInicial);
+            console.log("✅ Coleção bloqueios criada com sucesso");
+            
+            setTimeout(async () => {
+                const querySnapshot = await getDocs(query(bloqueiosRef, where("sistema", "==", true)));
+                querySnapshot.forEach(async (doc) => {
+                    await deleteDoc(doc.ref);
+                    console.log("🗑️ Documento de sistema removido");
+                });
+            }, 1000);
+        }
+        return true;
+    } catch (error) {
+        console.error("Erro ao verificar/criar coleção:", error);
+        return false;
+    }
+}
+
 // Carregar todos os bloqueios
 async function carregarBloqueios() {
     try {
         console.log("🔄 Carregando bloqueios do Firebase...");
         
-        // Verificar conexão com Firebase
-        if (!db) {
-            throw new Error("Firestore não inicializado");
-        }
+        await verificarECriarColecaoBloqueios();
         
         const bloqueiosRef = collection(db, "bloqueios");
         const q = query(bloqueiosRef, orderBy("criadoEm", "desc"));
         const snapshot = await getDocs(q);
         
-        console.log(`📊 Documentos encontrados: ${snapshot.size}`);
-        
         const hojeStr = getDataHojeLocal();
-        console.log(`📅 Data atual para referência: ${hojeStr}`);
         
         todosBloqueios = [];
         
-        if (snapshot.size === 0) {
-            console.log("ℹ️ Nenhum bloqueio encontrado no Firebase");
-            mostrarNotificacao("Nenhum bloqueio encontrado. Crie seu primeiro bloqueio!", "aviso");
-        }
-        
         snapshot.forEach(doc => {
-            const data = doc.data();
-            const bloqueio = { id: doc.id, ...data };
+            const bloqueio = { id: doc.id, ...doc.data() };
             
-            console.log(`📄 Bloqueio #${doc.id}:`, bloqueio);
+            if (bloqueio.sistema === true) return;
             
             let isAtivo = true;
             
@@ -212,57 +203,19 @@ async function carregarBloqueios() {
             });
         });
         
-        console.log(`✅ Total de bloqueios processados: ${todosBloqueios.length}`);
-        console.log(`   - Ativos: ${todosBloqueios.filter(b => b.isAtivo).length}`);
-        console.log(`   - Expirados: ${todosBloqueios.filter(b => !b.isAtivo).length}`);
-        
         renderizarBloqueios();
         
-        if (todosBloqueios.length === 0) {
-            const containerAtivos = document.getElementById("bloqueiosAtivos");
-            if (containerAtivos) {
-                containerAtivos.innerHTML = `
-                    <div class="empty-state">
-                        <i class="fa-solid fa-calendar-times"></i>
-                        <p>Nenhum bloqueio cadastrado</p>
-                        <small>Clique em "Novo Bloqueio" para começar</small>
-                    </div>
-                `;
-            }
-        }
-        
     } catch (error) {
-        console.error("❌ Erro CRÍTICO ao carregar bloqueios:", error);
-        console.error("Detalhes do erro:", {
-            message: error.message,
-            code: error.code,
-            stack: error.stack
-        });
+        console.error("Erro ao carregar bloqueios:", error);
+        mostrarNotificacao("Erro ao carregar bloqueios", "erro");
         
-        mostrarNotificacao("Erro ao carregar bloqueios: " + error.message, "erro");
-        
-        // Mostrar erro na tela
         const containerAtivos = document.getElementById("bloqueiosAtivos");
         if (containerAtivos) {
             containerAtivos.innerHTML = `
-                <div class="empty-state" style="border: 1px solid #ef4444; background: rgba(239,68,68,0.1);">
-                    <i class="fa-solid fa-circle-exclamation" style="color: #ef4444;"></i>
-                    <p style="color: #ef4444;">Erro ao carregar bloqueios</p>
-                    <small>${error.message}</small>
-                    <br><br>
-                    <button onclick="location.reload()" class="btn-bloqueio" style="margin-top: 10px;">
-                        <i class="fa-solid fa-rotate-right"></i> Tentar novamente
-                    </button>
-                </div>
-            `;
-        }
-        
-        const containerHistorico = document.getElementById("bloqueiosHistorico");
-        if (containerHistorico) {
-            containerHistorico.innerHTML = `
                 <div class="empty-state">
-                    <i class="fa-solid fa-clock-rotate-left"></i>
-                    <p>Não foi possível carregar o histórico</p>
+                    <i class="fa-solid fa-circle-exclamation"></i>
+                    <p>Erro ao carregar bloqueios</p>
+                    <small>Verifique sua conexão e tente novamente</small>
                 </div>
             `;
         }
@@ -274,10 +227,7 @@ function renderizarBloqueios() {
     const containerAtivos = document.getElementById("bloqueiosAtivos");
     const containerHistorico = document.getElementById("bloqueiosHistorico");
     
-    if (!containerAtivos || !containerHistorico) {
-        console.error("❌ Containers não encontrados!");
-        return;
-    }
+    if (!containerAtivos || !containerHistorico) return;
     
     let filtroTexto = filtroBusca?.value.toLowerCase() || "";
     let filtroTipoValor = filtroTipo?.value || "";
@@ -303,7 +253,6 @@ function renderizarBloqueios() {
         return true;
     });
     
-    // Ordenar ativos por data
     filtradosAtivos.sort((a, b) => {
         const dataA = a.data || a.dataInicio || '';
         const dataB = b.data || b.dataInicio || '';
@@ -315,8 +264,6 @@ function renderizarBloqueios() {
         const dataB = b.data || b.dataInicio || '';
         return dataB.localeCompare(dataA);
     });
-    
-    console.log(`🎨 Renderizando: ${filtradosAtivos.length} ativos, ${filtradosHistorico.length} histórico`);
     
     containerAtivos.innerHTML = '';
     containerHistorico.innerHTML = '';
@@ -415,11 +362,9 @@ function criarCardBloqueio(bloqueio, isAtivo) {
             try {
                 await deleteDoc(doc(db, "bloqueios", bloqueio.id));
                 console.log("✅ Bloqueio excluído com sucesso!");
-                mostrarNotificacao("Bloqueio excluído com sucesso!", "sucesso");
                 await carregarBloqueios();
             } catch (error) {
                 console.error("Erro ao excluir bloqueio:", error);
-                mostrarNotificacao("Erro ao excluir bloqueio: " + error.message, "erro");
             }
         }
     });
@@ -449,7 +394,7 @@ function formatarDataHora(timestamp) {
 // Configurar data mínima nos inputs
 function configurarDataMinima() {
     const hoje = getDataHojeLocal();
-    const dataInputs = ['dataBloqueio', 'dataHorarioBloqueio', 'dataInicioBloqueio', 'dataFimBloqueio'];
+    const dataInputs = ['dataBloqueio', 'dataHorarioBloqueio', 'dataInicioBloqueio'];
     dataInputs.forEach(id => {
         const input = document.getElementById(id);
         if (input) input.min = hoje;
@@ -475,7 +420,7 @@ if (formBloqueio) {
         if (tipo === "dia") {
             const data = document.getElementById("dataBloqueio").value;
             if (!data) {
-                mostrarNotificacao("Selecione uma data", "erro");
+                alert("Selecione uma data");
                 return;
             }
             dadosBloqueio.data = data;
@@ -484,25 +429,24 @@ if (formBloqueio) {
             try {
                 await addDoc(collection(db, "bloqueios"), dadosBloqueio);
                 console.log("✅ Bloqueio de dia inteiro adicionado com sucesso!");
-                mostrarNotificacao("Bloqueio de dia inteiro criado com sucesso!", "sucesso");
                 closeModal();
                 formBloqueio.reset();
                 tipoBloqueio.dispatchEvent(new Event("change"));
                 await carregarBloqueios();
             } catch (error) {
                 console.error("Erro ao salvar bloqueio:", error);
-                mostrarNotificacao("Erro ao salvar bloqueio: " + error.message, "erro");
+                alert("Erro ao salvar bloqueio");
             }
         } 
         else if (tipo === "periodo") {
             const dataInicio = document.getElementById("dataInicioBloqueio").value;
             const dataFim = document.getElementById("dataFimBloqueio").value;
             if (!dataInicio || !dataFim) {
-                mostrarNotificacao("Selecione o período", "erro");
+                alert("Selecione o período");
                 return;
             }
             if (dataInicio > dataFim) {
-                mostrarNotificacao("Data inicial não pode ser maior que data final", "erro");
+                alert("Data inicial não pode ser maior que data final");
                 return;
             }
             dadosBloqueio.dataInicio = dataInicio;
@@ -512,14 +456,13 @@ if (formBloqueio) {
             try {
                 await addDoc(collection(db, "bloqueios"), dadosBloqueio);
                 console.log("✅ Bloqueio de período adicionado com sucesso!");
-                mostrarNotificacao("Bloqueio de período criado com sucesso!", "sucesso");
                 closeModal();
                 formBloqueio.reset();
                 tipoBloqueio.dispatchEvent(new Event("change"));
                 await carregarBloqueios();
             } catch (error) {
                 console.error("Erro ao salvar bloqueio:", error);
-                mostrarNotificacao("Erro ao salvar bloqueio: " + error.message, "erro");
+                alert("Erro ao salvar bloqueio");
             }
         }
         else if (tipo === "horario") {
@@ -527,7 +470,7 @@ if (formBloqueio) {
             const profissionalId = profissionalSelect.value;
             
             if (!data) {
-                mostrarNotificacao("Selecione uma data", "erro");
+                alert("Selecione uma data");
                 return;
             }
             
@@ -537,7 +480,7 @@ if (formBloqueio) {
             });
             
             if (horariosSelecionados.length === 0) {
-                mostrarNotificacao("Selecione pelo menos um horário", "erro");
+                alert("Selecione pelo menos um horário");
                 return;
             }
             
@@ -545,7 +488,6 @@ if (formBloqueio) {
             if (profissionalId) dadosBloqueio.profissionalId = profissionalId;
             
             let sucessos = 0;
-            let erros = 0;
             
             for (const horario of horariosSelecionados) {
                 const bloqueioHorario = { ...dadosBloqueio, horario };
@@ -554,13 +496,11 @@ if (formBloqueio) {
                     sucessos++;
                 } catch (err) {
                     console.error("Erro ao adicionar horário:", horario, err);
-                    erros++;
                 }
             }
             
             if (sucessos > 0) {
                 console.log(`✅ ${sucessos} bloqueio(s) adicionado(s) com sucesso!`);
-                mostrarNotificacao(`${sucessos} bloqueio(s) criado(s) com sucesso!${erros > 0 ? ` (${erros} falhas)` : ''}`, "sucesso");
                 closeModal();
                 formBloqueio.reset();
                 tipoBloqueio.dispatchEvent(new Event("change"));
@@ -571,7 +511,7 @@ if (formBloqueio) {
                 
                 await carregarBloqueios();
             } else {
-                mostrarNotificacao("Erro ao adicionar bloqueios", "erro");
+                alert("Erro ao adicionar bloqueios");
             }
         }
     });
@@ -580,7 +520,6 @@ if (formBloqueio) {
 // Abrir modal para novo bloqueio
 if (btnNovoBloqueio) {
     btnNovoBloqueio.addEventListener("click", () => {
-        console.log("📝 Abrindo modal para novo bloqueio");
         const modalTitle = document.getElementById("modalTitle");
         if (modalTitle) modalTitle.textContent = "Novo Bloqueio";
         const bloqueioIdInput = document.getElementById("bloqueioId");
@@ -630,7 +569,6 @@ if (logoutBtn) {
             window.location.href = 'login.html';
         } catch (error) {
             console.error("Erro ao fazer logout:", error);
-            mostrarNotificacao("Erro ao fazer logout: " + error.message, "erro");
         }
     };
 }
@@ -638,36 +576,14 @@ if (logoutBtn) {
 // Inicialização
 async function init() {
     console.log("🚀 Inicializando sistema de bloqueios...");
-    console.log("📱 Firebase config:", firebaseConfig.projectId);
-    
-    // Verificar elementos DOM
-    const elementosNecessarios = [
-        'bloqueiosAtivos', 'bloqueiosHistorico', 'tipoBloqueio', 
-        'formBloqueio', 'btnNovoBloqueio'
-    ];
-    
-    elementosNecessarios.forEach(id => {
-        const elemento = document.getElementById(id);
-        if (!elemento) {
-            console.warn(`⚠️ Elemento não encontrado: #${id}`);
-        } else {
-            console.log(`✅ Elemento encontrado: #${id}`);
-        }
-    });
-    
     configurarDataMinima();
     await carregarProfissionais();
     popularHorariosMultiplos();
     await carregarBloqueios();
-    console.log("✅ Sistema de bloqueios pronto e funcionando!");
+    console.log("✅ Sistema de bloqueios pronto!");
 }
 
-// Iniciar após o DOM carregar
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-} else {
-    init();
-}
+init();
 
 // Funções globais
 window.closeModal = function() {
