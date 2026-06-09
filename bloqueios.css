@@ -469,3 +469,90 @@ textarea {
         font-size: 0.75rem;
     }
 }
+
+/* ==================== CORREÇÃO COMPLETA DOS CAMPOS DO FORMULÁRIO ==================== */
+
+/* Reset para todos os campos do modal */
+.modal-body .form-group {
+    margin-bottom: 20px;
+    width: 100%;
+}
+
+.modal-body .form-group label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    font-size: 0.85rem;
+    color: var(--text-main);
+}
+
+/* Estilo padrão para TODOS os campos */
+.modal-body .form-group input,
+.modal-body .form-group select,
+.modal-body .form-group textarea,
+.modal-body input[type="date"],
+.modal-body input[type="text"],
+.modal-body input[type="email"],
+.modal-body input[type="password"],
+.modal-body input[type="number"],
+.modal-body select,
+.modal-body textarea {
+    width: 100% !important;
+    padding: 12px 16px !important;
+    font-size: 0.9rem !important;
+    background: var(--bg-dark) !important;
+    border: 1px solid var(--border-color) !important;
+    border-radius: 12px !important;
+    color: var(--text-main) !important;
+    box-sizing: border-box !important;
+    transition: all 0.2s ease !important;
+}
+
+/* Altura específica para campo de data */
+.modal-body input[type="date"] {
+    min-height: 48px !important;
+    line-height: 24px !important;
+    cursor: pointer !important;
+}
+
+/* Altura específica para textarea */
+.modal-body textarea {
+    min-height: 80px !important;
+    resize: vertical !important;
+}
+
+/* Focus state */
+.modal-body .form-group input:focus,
+.modal-body .form-group select:focus,
+.modal-body .form-group textarea:focus {
+    outline: none !important;
+    border-color: var(--primary) !important;
+    box-shadow: 0 0 0 3px rgba(33, 153, 239, 0.1) !important;
+}
+
+/* Estilo para o placeholder */
+.modal-body .form-group input::placeholder,
+.modal-body .form-group textarea::placeholder {
+    color: var(--text-muted);
+    opacity: 0.7;
+}
+
+/* Garantir que o campo data tenha o mesmo visual nos diferentes navegadores */
+.modal-body input[type="date"]::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+}
+
+.modal-body input[type="date"]::-webkit-calendar-picker-indicator:hover {
+    background: rgba(33, 153, 239, 0.2);
+}
+
+/* Ajuste para o campo data no Firefox */
+.modal-body input[type="date"] {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+}
