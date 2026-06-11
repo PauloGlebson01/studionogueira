@@ -1,6 +1,7 @@
 // agenda.js - Versão Corrigida com suporte a PRÉ-LANÇAMENTOS E LEMBRETES WHATSAPP
 // Com sincronização em tempo real com comandas e atualização de estoque ao concluir
 // CORREÇÃO: URL de avaliação corrigida (sem duplicação)
+// VERSÃO: Layout Horizontal em Tabela com Dia da Semana Corrigido
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
@@ -84,6 +85,51 @@ function formatarData(dataStr) {
         }
     }
     return 'Data inválida';
+}
+
+function obterDiaSemana(dataStr) {
+    if (!dataStr) return '';
+    
+    try {
+        let dia = null, mes = null, ano = null;
+        let data;
+        
+        // Caso 1: Timestamp do Firestore
+        if (dataStr.toDate) {
+            data = dataStr.toDate();
+        }
+        // Caso 2: String no formato DD/MM/YYYY
+        else if (typeof dataStr === 'string' && dataStr.includes('/')) {
+            const partes = dataStr.split('/');
+            if (partes.length >= 3) {
+                dia = parseInt(partes[0], 10);
+                mes = parseInt(partes[1], 10);
+                ano = parseInt(partes[2], 10);
+                // Criar data corretamente (mês em JS é 0-index)
+                data = new Date(ano, mes - 1, dia);
+            }
+        }
+        // Caso 3: String no formato YYYY-MM-DD
+        else if (typeof dataStr === 'string' && dataStr.includes('-')) {
+            const partes = dataStr.split('-');
+            if (partes.length >= 3) {
+                ano = parseInt(partes[0], 10);
+                mes = parseInt(partes[1], 10);
+                dia = parseInt(partes[2], 10);
+                data = new Date(ano, mes - 1, dia);
+            }
+        }
+        
+        if (data && !isNaN(data.getTime())) {
+            const diasSemana = ['DOMINGO', 'SEGUNDA', 'TERÇA', 'QUARTA', 'QUINTA', 'SEXTA', 'SÁBADO'];
+            return diasSemana[data.getDay()];
+        }
+        
+        return '';
+    } catch (error) {
+        console.error("Erro ao calcular dia da semana:", error);
+        return '';
+    }
 }
 
 function formatarHorario(horario) {
@@ -327,7 +373,6 @@ async function verificarLembretesAutomaticos() {
         const agendamentosRef = collection(db, "agendamentos");
         const statusAceitos = ["confirmado", "aguardando_pagamento"];
         
-        // Lembretes do dia (manhã - entre 8h e 11h)
         if (horaAtual >= 8 && horaAtual <= 11) {
             const qDia = query(agendamentosRef, where("data", "==", dataHoje), where("status", "in", statusAceitos));
             const snapshotDia = await getDocs(qDia);
@@ -342,7 +387,6 @@ async function verificarLembretesAutomaticos() {
             }
         }
         
-        // Lembretes de véspera (noite - entre 20h e 23h)
         if (horaAtual >= 20 && horaAtual <= 23) {
             const qVespera = query(agendamentosRef, where("data", "==", dataAmanha), where("status", "in", statusAceitos));
             const snapshotVespera = await getDocs(qVespera);
@@ -943,7 +987,7 @@ async function marcarComoAusente(id, agendamento) {
     }
 }
 
-// ==================== FUNÇÃO CONCLUIR AGENDAMENTO (CORRIGIDA) ====================
+// ==================== FUNÇÃO CONCLUIR AGENDAMENTO ====================
 
 async function concluirAgendamento(id, agendamento) {
     try {
@@ -1132,8 +1176,6 @@ async function concluirAgendamento(id, agendamento) {
             console.error("❌ Erro ao criar avaliação:", error);
         }
         
-        // ==================== CORREÇÃO DA URL DE AVALIAÇÃO ====================
-        // URL correta sem duplicação
         const baseUrl = "https://studionogueira.vercel.app";
         const clienteEncoded = encodeURIComponent(nomeCliente);
         const servicoEncoded = encodeURIComponent(servicoNome);
@@ -1248,121 +1290,75 @@ async function cancelarAgendamento(id, agendamento) {
     }
 }
 
-// ==================== FUNÇÃO PARA RENDERIZAR SERVIÇOS DO PACOTE ====================
+// ==================== CRIAR LINHA DA TABELA (FORMATO HORIZONTAL COM DIA DA SEMANA CORRIGIDO) ====================
 
-function renderizarServicosPacote(servicos) {
-    if (!servicos || servicos.length === 0) return '';
-
-    return `
-        <div style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed rgba(245, 158, 11, 0.3);">
-            <div style="font-size: 0.65rem; color: #f59e0b; margin-bottom: 6px; display: flex; align-items: center; gap: 5px;">
-                <i class="fa-solid fa-list-ul"></i> Serviços inclusos neste pacote:
-            </div>
-            <div style="display: flex; flex-wrap: wrap; gap: 6px;">
-                ${servicos.map(s => `
-                    <span style="background: rgba(245, 158, 11, 0.12); color: #f59e0b; padding: 3px 10px; border-radius: 20px; font-size: 0.65rem; display: inline-flex; align-items: center; gap: 5px;">
-                        <i class="fa-solid fa-cut" style="font-size: 0.55rem;"></i> ${escapeHtml(s.nome)}
-                        ${s.preco ? `<span style="color: #94a3b8; margin-left: 4px;">${formatarMoeda(s.preco)}</span>` : ''}
-                    </span>
-                `).join('')}
-            </div>
-        </div>
-    `;
-}
-
-// ==================== CRIAR CARD AGENDAMENTO ====================
-
-function criarCardAgendamento(agendamento) {
-    const card = document.createElement('div');
-    card.className = 'appointment-card';
-    card.setAttribute('data-id', agendamento.id);
-    card.setAttribute('data-status', agendamento.status || '');
+function criarLinhaAgendamento(agendamento) {
+    const tr = document.createElement('tr');
+    tr.className = 'appointment-row';
+    tr.setAttribute('data-id', agendamento.id);
+    tr.setAttribute('data-status', agendamento.status || '');
 
     const dataFormatada = formatarData(agendamento.data);
+    const diaSemana = obterDiaSemana(agendamento.data);
     const horario = agendamento.horario || '--:00';
     const cliente = agendamento.cliente || agendamento.nome || 'Cliente';
     const telefone = agendamento.telefone || agendamento.whatsapp || '';
     const profissional = agendamento.profissional || 'Barbeiro';
-    const clienteId = agendamento.clienteId || '';
+    const profissionalInicial = profissional.charAt(0).toUpperCase();
 
     const { itens, valorTotal } = extrairItensDoAgendamento(agendamento);
+    const temPacote = itens.some(i => i.ehPacote);
+    const totalEconomia = itens.reduce((sum, i) => sum + (i.descontoValor || 0), 0);
 
-    let itensHtml = '';
-    let totalEconomia = 0;
+    let servicosHtml = '';
+    let servicosDetalheHtml = '';
 
-    itens.forEach(item => {
-        totalEconomia += (item.descontoValor || 0);
-
-        if (item.ehPacote) {
-            itensHtml += `
-                <div style="background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(245, 158, 11, 0.02)); border-radius: 12px; padding: 12px; margin-top: 8px; border: 1px solid rgba(245, 158, 11, 0.2);">
-                    <div style="display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap;">
-                        <div style="background: rgba(245, 158, 11, 0.15); border-radius: 10px; padding: 6px 10px;">
-                            <i class="fa-solid fa-gift" style="color: #f59e0b; font-size: 1rem;"></i>
-                        </div>
-                        <div style="flex: 1;">
-                            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px;">
-                                <strong style="color: #f59e0b; font-size: 0.9rem;">${escapeHtml(item.nome)}</strong>
-                                <span style="font-size: 0.6rem; background: #f59e0b; color: #fff; padding: 2px 10px; border-radius: 20px; font-weight: 600;">
-                                    <i class="fa-solid fa-tag"></i> PACOTE
-                                </span>
-                                ${item.descontoPercentual > 0 ? `<span style="font-size: 0.65rem; background: #10b98120; padding: 3px 10px; border-radius: 20px; color: #10b981; font-weight: 600;">🎯 ${item.descontoPercentual}% OFF</span>` : ''}
-                            </div>
-                            
-                            ${item.descontoPercentual > 0 ? `
-                                <div style="margin: 6px 0;">
-                                    <span style="text-decoration: line-through; color: #94a3b8; font-size: 0.75rem;">De: ${formatarMoeda(item.precoOriginal)}</span>
-                                    <strong style="color: #10b981; font-size: 1rem; margin-left: 10px;">Por: ${formatarMoeda(item.precoFinal)}</strong>
-                                </div>
-                                <div style="background: #10b98110; border-radius: 8px; padding: 6px 10px; margin: 6px 0;">
-                                    <i class="fa-solid fa-coins" style="color: #10b981; font-size: 0.7rem;"></i>
-                                    <span style="color: #10b981; font-size: 0.7rem; font-weight: 500;"> Cliente economiza ${formatarMoeda(item.descontoValor)} com este pacote!</span>
-                                </div>
-                            ` : `
-                                <div style="margin: 6px 0;">
-                                    <strong style="color: #f59e0b; font-size: 1rem;">${formatarMoeda(item.precoFinal)}</strong>
-                                </div>
-                            `}
-                            
-                            ${renderizarServicosPacote(item.servicos)}
-                        </div>
-                    </div>
-                </div>
-            `;
-        } else if (item.descontoPercentual > 0) {
-            itensHtml += `
-                <div style="background: rgba(16, 185, 129, 0.05); border-radius: 8px; padding: 8px 10px; margin-top: 5px; border-left: 3px solid #10b981;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <i class="fa-solid fa-cut" style="color: #10b981; font-size: 0.75rem;"></i>
-                            <span style="font-size: 0.75rem;">${escapeHtml(item.nome)}</span>
-                        </div>
-                        <div>
-                            <span style="text-decoration: line-through; color: #94a3b8; font-size: 0.7rem;">${formatarMoeda(item.precoOriginal)}</span>
-                            <strong style="color: #10b981; font-size: 0.8rem; margin-left: 6px;">${formatarMoeda(item.precoFinal)}</strong>
-                            <span style="font-size: 0.55rem; background: #10b98120; padding: 2px 6px; border-radius: 10px; margin-left: 5px;">-${item.descontoPercentual}%</span>
-                        </div>
-                    </div>
-                </div>
-            `;
-        } else {
-            itensHtml += `
-                <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; margin-top: 4px; background: rgba(33, 153, 239, 0.04); border-radius: 8px;">
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <i class="fa-solid fa-cut" style="color: #2199EF; font-size: 0.7rem;"></i>
-                        <span style="font-size: 0.75rem;">${escapeHtml(item.nome)}</span>
-                    </div>
-                    <strong style="color: #2199EF; font-size: 0.75rem;">${formatarMoeda(item.precoFinal)}</strong>
+    if (itens.length > 0) {
+        const servicosPrincipais = itens.slice(0, 2);
+        const servicosRestantes = itens.length - 2;
+        
+        servicosHtml = `
+            <div class="servicos-list">
+                ${servicosPrincipais.map(item => {
+                    if (item.ehPacote) {
+                        return `<span class="pacote-tag"><i class="fa-solid fa-gift"></i> ${escapeHtml(item.nome)}</span>`;
+                    }
+                    return `<span class="servico-tag"><i class="fa-solid fa-cut"></i> ${escapeHtml(item.nome)}</span>`;
+                }).join('')}
+                ${servicosRestantes > 0 ? `<span class="servico-tag">+${servicosRestantes} outro(s)</span>` : ''}
+            </div>
+        `;
+        
+        if (itens.length > 2 || temPacote) {
+            servicosDetalheHtml = `
+                <div class="servicos-detalhe">
+                    ${itens.map(item => {
+                        if (item.ehPacote) {
+                            const qtdServicos = item.servicos?.length || 0;
+                            return `<span><i class="fa-solid fa-box"></i> ${escapeHtml(item.nome)} (${qtdServicos} serviços)</span>`;
+                        }
+                        return `<span><i class="fa-solid fa-cut"></i> ${escapeHtml(item.nome)}</span>`;
+                    }).join(' · ')}
                 </div>
             `;
         }
-    });
-
-    if (itensHtml === '') {
-        itensHtml = '<div style="color: #94a3b8; padding: 12px; text-align: center;">Nenhum serviço selecionado</div>';
+    } else {
+        servicosHtml = '<span class="servico-tag">Atendimento</span>';
     }
 
-    const temPacote = itens.some(i => i.ehPacote);
+    let valorHtml = '';
+    if (temPacote && totalEconomia > 0) {
+        valorHtml = `
+            <div class="valor-info">
+                <span class="valor-total">${formatarMoeda(valorTotal)}</span>
+                <span class="valor-desconto"><i class="fa-solid fa-tag"></i> Economia: ${formatarMoeda(totalEconomia)}</span>
+                ${itens.some(i => i.precoOriginal > i.precoFinal) ? 
+                    `<span class="valor-original">De: ${formatarMoeda(itens.reduce((s,i) => s + i.precoOriginal, 0))}</span>` : ''}
+            </div>
+        `;
+    } else {
+        valorHtml = `<div class="valor-info"><span class="valor-total">${formatarMoeda(valorTotal)}</span></div>`;
+    }
 
     let botoesAcao = '';
     if (agendamento.status === 'confirmado') {
@@ -1378,13 +1374,13 @@ function criarCardAgendamento(agendamento) {
                     <i class="fa-regular fa-circle-xmark"></i> Cancelar
                 </button>
                 <button class="btn-status lembrete-dia" data-id="${agendamento.id}" data-tipo="dia">
-                    <i class="fa-regular fa-bell"></i> Lembrar Hoje
+                    <i class="fa-regular fa-bell"></i> Hoje
                 </button>
                 <button class="btn-status lembrete-vespera" data-id="${agendamento.id}" data-tipo="vespera">
-                    <i class="fa-regular fa-clock"></i> Lembrar Véspera
+                    <i class="fa-regular fa-clock"></i> Véspera
                 </button>
                 <button class="btn-status ver-comanda" data-id="${agendamento.id}">
-                    <i class="fa-solid fa-receipt"></i> Ver Comanda
+                    <i class="fa-solid fa-receipt"></i> Comanda
                 </button>
             </div>
         `;
@@ -1398,61 +1394,51 @@ function criarCardAgendamento(agendamento) {
         `;
     }
 
-    card.innerHTML = `
-        <div class="appointment-header">
-            <div>
-                <strong class="cliente-nome">${escapeHtml(cliente)}</strong>
-                ${temPacote ? `
-                    <span style="background: #f59e0b; color: #fff; font-size: 0.6rem; padding: 2px 10px; border-radius: 20px; margin-left: 8px; font-weight: 600;">
-                        <i class="fa-solid fa-gift"></i> PACOTE
-                    </span>
-                ` : ''}
-                ${totalEconomia > 0 && temPacote ? `
-                    <span style="background: #10b98120; color: #10b981; font-size: 0.6rem; padding: 2px 8px; border-radius: 20px; margin-left: 5px;">
-                        💰 Economia: ${formatarMoeda(totalEconomia)}
-                    </span>
-                ` : ''}
+    tr.innerHTML = `
+        <td class="col-cliente">
+            <div class="cliente-info">
+                <span class="cliente-nome">${escapeHtml(cliente)}</span>
+                ${telefone ? `<span class="cliente-telefone"><i class="fa-brands fa-whatsapp"></i> ${escapeHtml(telefone)}</span>` : ''}
             </div>
-            <span class="appointment-time">${escapeHtml(horario)}</span>
-        </div>
-        <div class="appointment-details">
-            <div class="detail-item">
-                <i class="fa-regular fa-calendar"></i> ${dataFormatada}
+        </td>
+        <td class="col-data-hora">
+            <div class="data-info">
+                <span class="data">${dataFormatada}</span>
+                ${diaSemana ? `<span class="dia-semana"><i class="fa-regular fa-calendar-alt"></i> ${diaSemana}</span>` : ''}
+                <span class="hora"><i class="fa-regular fa-clock"></i> ${escapeHtml(horario)}</span>
             </div>
-            <div class="detail-item" style="align-items: flex-start;">
-                <i class="fa-solid fa-list" style="margin-top: 3px;"></i>
-                <div style="flex: 1;">
-                    <div style="font-size: 0.7rem; color: #64748b; margin-bottom: 8px; font-weight: 600;">
-                        ${temPacote ? '📦 DETALHES DO PACOTE:' : '✂️ SERVIÇOS:'}
-                    </div>
-                    ${itensHtml}
-                </div>
+        </td>
+        <td class="col-profissional">
+            <div class="profissional-info">
+                <div class="profissional-avatar">${escapeHtml(profissionalInicial)}</div>
+                <span class="profissional-nome">${escapeHtml(profissional)}</span>
             </div>
-            <div class="detail-item">
-                <i class="fa-solid fa-user-nurse"></i> ${escapeHtml(profissional)}
-            </div>
-            <div class="detail-item" style="margin-top: 10px; padding-top: 8px; border-top: 1px solid #e2e8f0;">
-                <i class="fa-solid fa-dollar-sign" style="color: #2199EF;"></i> 
-                <strong style="color: #2199EF; font-size: 1rem;">TOTAL: ${formatarMoeda(valorTotal)}</strong>
-            </div>
-            ${telefone ? `<div class="detail-item"><i class="fa-brands fa-whatsapp"></i> ${escapeHtml(telefone)}</div>` : ''}
-        </div>
-        ${botoesAcao}
+        </td>
+        <td class="col-servicos">
+            ${servicosHtml}
+            ${servicosDetalheHtml}
+        </td>
+        <td class="col-valor">
+            ${valorHtml}
+        </td>
+        <td class="col-acoes">
+            ${botoesAcao}
+        </td>
     `;
 
-    card.querySelector('.concluir')?.addEventListener('click', (e) => {
+    tr.querySelector('.concluir')?.addEventListener('click', (e) => {
         e.stopPropagation();
         concluirAgendamento(agendamento.id, agendamento);
     });
-    card.querySelector('.ausentar')?.addEventListener('click', (e) => {
+    tr.querySelector('.ausentar')?.addEventListener('click', (e) => {
         e.stopPropagation();
         marcarComoAusente(agendamento.id, agendamento);
     });
-    card.querySelector('.cancelar')?.addEventListener('click', (e) => {
+    tr.querySelector('.cancelar')?.addEventListener('click', (e) => {
         e.stopPropagation();
         cancelarAgendamento(agendamento.id, agendamento);
     });
-    card.querySelector('.lembrete-dia')?.addEventListener('click', async (e) => {
+    tr.querySelector('.lembrete-dia')?.addEventListener('click', async (e) => {
         e.stopPropagation();
         const resultado = await enviarLembreteWhatsApp(agendamento, 'dia');
         if (resultado.sucesso) {
@@ -1461,7 +1447,7 @@ function criarCardAgendamento(agendamento) {
             mostrarToast(`Erro: ${resultado.motivo}`, 'erro');
         }
     });
-    card.querySelector('.lembrete-vespera')?.addEventListener('click', async (e) => {
+    tr.querySelector('.lembrete-vespera')?.addEventListener('click', async (e) => {
         e.stopPropagation();
         const resultado = await enviarLembreteWhatsApp(agendamento, 'vespera');
         if (resultado.sucesso) {
@@ -1470,12 +1456,12 @@ function criarCardAgendamento(agendamento) {
             mostrarToast(`Erro: ${resultado.motivo}`, 'erro');
         }
     });
-    card.querySelector('.ver-comanda')?.addEventListener('click', (e) => {
+    tr.querySelector('.ver-comanda')?.addEventListener('click', (e) => {
         e.stopPropagation();
         abrirComandaDoAgendamento(agendamento.id);
     });
 
-    return card;
+    return tr;
 }
 
 // ==================== FUNÇÕES AUXILIARES ====================
@@ -1500,7 +1486,7 @@ function isDataNoPeriodo(dataAgendamento, inicio, fim) {
     return dataStr >= inicio && dataStr <= fim;
 }
 
-// ==================== FUNÇÃO PARA APLICAR FILTRO ====================
+// ==================== FUNÇÃO PARA APLICAR FILTRO (VERSÃO TABELA) ====================
 
 function aplicarFiltro() {
     if (unsubscribe) unsubscribe();
@@ -1524,12 +1510,13 @@ function aplicarFiltro() {
     const q = query(collection(db, "agendamentos"));
 
     unsubscribe = onSnapshot(q, (snapshot) => {
-        if (confirmadosDiv) confirmadosDiv.innerHTML = '';
-        if (concluidosDiv) concluidosDiv.innerHTML = '';
-        if (ausentesDiv) ausentesDiv.innerHTML = '';
-        if (canceladosDiv) canceladosDiv.innerHTML = '';
+        const containers = {
+            confirmado: { div: confirmadosDiv, rows: [], count: 0 },
+            concluido: { div: concluidosDiv, rows: [], count: 0 },
+            ausente: { div: ausentesDiv, rows: [], count: 0 },
+            cancelado: { div: canceladosDiv, rows: [], count: 0 }
+        };
 
-        let countConf = 0, countConc = 0, countAus = 0, countCanc = 0;
         const agendamentosList = [];
 
         snapshot.forEach(docSnap => {
@@ -1557,50 +1544,70 @@ function aplicarFiltro() {
             return horarioA.localeCompare(horarioB);
         });
 
-        console.log(`📊 Agendamentos carregados - Total no período: ${agendamentosList.length}, Período: ${dInicio} até ${dFim}`);
+        console.log(`📊 Agendamentos carregados - Total no período: ${agendamentosList.length}`);
 
-        for (const data of agendamentosList) {
-            const card = criarCardAgendamento(data);
-
-            if (data.status === 'confirmado') {
-                confirmadosDiv?.appendChild(card);
-                countConf++;
-            } else if (data.status === 'concluido') {
-                concluidosDiv?.appendChild(card);
-                countConc++;
-            } else if (data.status === 'ausente') {
-                ausentesDiv?.appendChild(card);
-                countAus++;
-            } else if (data.status === 'cancelado') {
-                canceladosDiv?.appendChild(card);
-                countCanc++;
-            } else {
-                confirmadosDiv?.appendChild(card);
-                countConf++;
+        for (const [statusKey, container] of Object.entries(containers)) {
+            if (container.div) {
+                const table = document.createElement('table');
+                table.className = 'appointments-table';
+                
+                table.innerHTML = `
+                    <thead>
+                        <tr>
+                            <th class="col-cliente">Cliente</th>
+                            <th class="col-data-hora">Data/Horário</th>
+                            <th class="col-profissional">Profissional</th>
+                            <th class="col-servicos">Serviços</th>
+                            <th class="col-valor">Valor</th>
+                            <th class="col-acoes">Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                `;
+                
+                const tbody = table.querySelector('tbody');
+                
+                for (const data of agendamentosList) {
+                    let statusMatch = false;
+                    
+                    if (statusKey === 'confirmado' && (data.status === 'confirmado' || !data.status)) statusMatch = true;
+                    else if (statusKey === 'concluido' && data.status === 'concluido') statusMatch = true;
+                    else if (statusKey === 'ausente' && data.status === 'ausente') statusMatch = true;
+                    else if (statusKey === 'cancelado' && data.status === 'cancelado') statusMatch = true;
+                    
+                    if (statusMatch) {
+                        const row = criarLinhaAgendamento(data);
+                        tbody.appendChild(row);
+                        container.count++;
+                    }
+                }
+                
+                container.div.innerHTML = '';
+                if (container.count > 0) {
+                    container.div.appendChild(table);
+                } else {
+                    const emptyMessage = document.createElement('div');
+                    emptyMessage.className = 'empty-agenda';
+                    let mensagemVazio = '';
+                    const dataInicioFormatada = formatarData(dInicio);
+                    const dataFimFormatada = formatarData(dFim);
+                    if (filtroPersonalizado && dInicio !== dFim) {
+                        mensagemVazio = `<i class="fa-regular fa-calendar"></i><p>Nenhum agendamento encontrado no período de ${dataInicioFormatada} até ${dataFimFormatada}</p>`;
+                    } else if (filtroPersonalizado) {
+                        mensagemVazio = `<i class="fa-regular fa-calendar"></i><p>Nenhum agendamento encontrado para ${dataInicioFormatada}</p>`;
+                    } else {
+                        mensagemVazio = `<i class="fa-regular fa-calendar"></i><p>Nenhum agendamento para hoje (${dataInicioFormatada})</p>`;
+                    }
+                    emptyMessage.innerHTML = mensagemVazio;
+                    container.div.appendChild(emptyMessage);
+                }
             }
         }
 
-        if (countConfirmado) countConfirmado.textContent = countConf;
-        if (countConcluido) countConcluido.textContent = countConc;
-        if (countAusente) countAusente.textContent = countAus;
-        if (countCancelado) countCancelado.textContent = countCanc;
-
-        if (agendamentosList.length === 0 && confirmadosDiv) {
-            const emptyMessage = document.createElement('div');
-            emptyMessage.className = 'empty-agenda';
-            let mensagemVazio = '';
-            const dataInicioFormatada = formatarData(dInicio);
-            const dataFimFormatada = formatarData(dFim);
-            if (filtroPersonalizado && dInicio !== dFim) {
-                mensagemVazio = `<i class="fa-regular fa-calendar"></i><p>Nenhum agendamento encontrado no período de ${dataInicioFormatada} até ${dataFimFormatada}</p><p style="font-size: 0.8rem; margin-top: 8px;">🔒 Use o filtro acima para visualizar outras datas</p>`;
-            } else if (filtroPersonalizado) {
-                mensagemVazio = `<i class="fa-regular fa-calendar"></i><p>Nenhum agendamento encontrado para ${dataInicioFormatada}</p><p style="font-size: 0.8rem; margin-top: 8px;">🔒 Use o filtro acima para visualizar outras datas</p>`;
-            } else {
-                mensagemVazio = `<i class="fa-regular fa-calendar"></i><p>Nenhum agendamento para hoje (${dataInicioFormatada})</p><p style="font-size: 0.8rem; margin-top: 8px;">🔒 Use o filtro acima para visualizar outras datas</p>`;
-            }
-            emptyMessage.innerHTML = mensagemVazio;
-            confirmadosDiv.appendChild(emptyMessage);
-        }
+        if (countConfirmado) countConfirmado.textContent = containers.confirmado.count;
+        if (countConcluido) countConcluido.textContent = containers.concluido.count;
+        if (countAusente) countAusente.textContent = containers.ausente.count;
+        if (countCancelado) countCancelado.textContent = containers.cancelado.count;
     });
 }
 
@@ -1686,12 +1693,10 @@ let intervaloLembretes = null;
 function iniciarVerificacaoLembretes() {
     if (intervaloLembretes) clearInterval(intervaloLembretes);
     
-    // Verificar a cada 30 minutos
     intervaloLembretes = setInterval(() => {
         verificarLembretesAutomaticos();
     }, 30 * 60 * 1000);
     
-    // Executar primeira verificação após 1 minuto
     setTimeout(() => {
         verificarLembretesAutomaticos();
     }, 60000);
@@ -1707,7 +1712,7 @@ function pararVerificacaoLembretes() {
 // ==================== INICIALIZAÇÃO ====================
 
 document.addEventListener('DOMContentLoaded', () => {
-    console.log("📅 Agenda.js iniciado - Versão com LEMBRETES WHATSAPP");
+    console.log("📅 Agenda.js iniciado - Versão com LEMBRETES WHATSAPP, LAYOUT HORIZONTAL E DIA DA SEMANA CORRIGIDO");
     
     if (dataInicio) dataInicio.value = '';
     if (dataFim) dataFim.value = '';
@@ -1747,4 +1752,4 @@ onAuthStateChanged(auth, (user) => {
 const logoutBtn = document.getElementById('logout');
 if (logoutBtn) logoutBtn.onclick = async () => { await signOut(auth); window.location.href = 'login.html'; };
 
-console.log("✅ Agenda.js carregado - Agora com suporte a LEMBRETES WHATSAPP e URL de avaliação corrigida!");
+console.log("✅ Agenda.js carregado - Layout horizontal em tabela com dia da semana corrigido!");
