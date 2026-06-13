@@ -8,7 +8,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
-//BANCO DE DADOS
+//CONFIGURAÇÕES DE DADOS
 const firebaseConfig = {
     apiKey: "AIzaSyC5xXm9T2nzh6xxZ5-zrMHfCNdqQOG8SZI",
     authDomain: "studio-nogueira-e07bb.firebaseapp.com",
@@ -158,7 +158,7 @@ function dispararAtualizacaoAgenda() {
     } catch(e) {}
 }
 
-// ==================== FUNÇÃO PARA SINCRONIZAR AGENDAMENTO ====================
+// ==================== FUNÇÃO PARA SINCRONIZAR AGENDAMENTO (CORRIGIDA) ====================
 
 async function sincronizarAgendamentoComComanda(comandaId, comandaData, novoStatusComanda) {
     try {
@@ -188,8 +188,14 @@ async function sincronizarAgendamentoComComanda(comandaId, comandaData, novoStat
             novoStatusAgendamento = "cancelado";
         } else if (novoStatusComanda === "ausente") {
             novoStatusAgendamento = "ausente";
-        } else if (novoStatusComanda === "aberta" && agendamentoAtual.status === "ausente") {
-            novoStatusAgendamento = "confirmado";
+        } else if (novoStatusComanda === "aberta") {
+            // CORREÇÃO: Quando a comanda é reativada (aberta), 
+            // o agendamento deve voltar para "confirmado" independente 
+            // do status anterior (ausente ou cancelado)
+            if (agendamentoAtual.status === "ausente" || agendamentoAtual.status === "cancelado") {
+                novoStatusAgendamento = "confirmado";
+                console.log(`🔄 Reativando agendamento de ${agendamentoAtual.status} para confirmado`);
+            }
         }
         
         if (novoStatusAgendamento && agendamentoAtual.status !== novoStatusAgendamento) {
@@ -206,6 +212,12 @@ async function sincronizarAgendamentoComComanda(comandaId, comandaData, novoStat
             } else if (novoStatusAgendamento === "ausente") {
                 updateData.dataAusencia = Timestamp.now();
                 updateData.motivoAusencia = comandaData.justificativaAusencia || "Cliente não compareceu";
+            } else if (novoStatusAgendamento === "confirmado") {
+                // Limpar os campos de cancelamento/ausência ao reativar
+                updateData.dataCancelamento = null;
+                updateData.motivoCancelamento = null;
+                updateData.dataAusencia = null;
+                updateData.motivoAusencia = null;
             }
             
             await updateDoc(agendamentoRef, updateData);
@@ -1342,7 +1354,7 @@ async function podeFinalizarComanda(comandaData) {
     return { pode: true, mensagem: "" };
 }
 
-// ==================== FINALIZAR COMANDA (CORRIGIDA) ====================
+// ==================== FINALIZAR COMANDA ====================
 
 async function finalizarComanda(id) {
     try {
@@ -1402,7 +1414,7 @@ async function finalizarComanda(id) {
         
         await sincronizarPagamentoComFinanceiro(id, comandaData);
         
-        // 🔥 SINCRONIZAR COM AGENDAMENTO
+        // Sincronizar com agendamento
         await sincronizarAgendamentoComComanda(id, comandaData, "finalizada");
         
         await updateDoc(doc(db, "comandas", id), { 
@@ -2045,7 +2057,7 @@ function recalcularTotalComDesconto() {
 
 window.recalcularTotalComDesconto = recalcularTotalComDesconto;
 
-// ==================== FUNÇÃO SALVAR EDIÇÃO COMANDA (MODIFICADA) ====================
+// ==================== FUNÇÃO SALVAR EDIÇÃO COMANDA ====================
 
 async function salvarEdicaoComanda() {
     if (!comandaEditando) {
@@ -2108,7 +2120,7 @@ async function salvarEdicaoComanda() {
     
     await updateDoc(doc(db, "comandas", comandaEditando.id), updateData);
     
-    // 🔥 IMPORTANTE: Sincronizar com o agendamento se o status mudou
+    // IMPORTANTE: Sincronizar com o agendamento se o status mudou
     const comandaAtualizada = { ...comandaEditando, ...updateData };
     
     if (novoStatus !== statusOriginal && (novoStatus === "finalizada" || novoStatus === "cancelado" || novoStatus === "ausente")) {
