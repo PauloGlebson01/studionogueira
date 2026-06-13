@@ -2092,3 +2092,176 @@
         padding: 10px;
     }
 }
+
+/* ==================== MODAIS PADRÃO DO SISTEMA ==================== */
+
+/* Modal pequeno (para ausência, cancelamento, reativação) */
+.modal-small {
+    max-width: 450px;
+}
+
+/* Botão Danger - Para ações perigosas (cancelar, ausente) */
+.btn-danger {
+    padding: 10px 24px;
+    background: linear-gradient(135deg, #ef4444, #dc2626);
+    border: none;
+    border-radius: 10px;
+    color: white;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
+}
+
+.btn-danger:hover {
+    background: linear-gradient(135deg, #dc2626, #b91c1c);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+}
+
+.btn-danger:active {
+    transform: translateY(0);
+}
+
+/* Botão Save - Para ações positivas (salvar, reativar) */
+.btn-save {
+    padding: 10px 28px;
+    background: linear-gradient(135deg, #2199EF, #1a7fcc);
+    border: none;
+    border-radius: 10px;
+    color: white;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.btn-save:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(33, 153, 239, 0.4);
+}
+
+.btn-save:active {
+    transform: translateY(0);
+}
+
+/* Botão Cancelar - Padrão do sistema */
+.btn-cancel {
+    padding: 10px 24px;
+    background: var(--bg-dark);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.btn-cancel:hover {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: #ef4444;
+    color: #ef4444;
+    transform: translateY(-1px);
+}
+
+/* Form actions padronizados */
+.form-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border-color);
+}
+
+/* Ajuste para os botões dentro dos modais */
+.modal .form-actions {
+    padding: 16px 24px;
+    margin-top: 0;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 0 0 20px 20px;
+}
+
+/* Texto de aviso padrão */
+.text-warning {
+    color: #f59e0b;
+    font-size: 0.75rem;
+    margin-top: 12px;
+    padding: 10px;
+    background: rgba(245, 158, 11, 0.1);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.text-warning i {
+    font-size: 0.9rem;
+}
+
+.text-danger {
+    color: #ef4444;
+}
+
+/* Garantir que todos os botões dentro dos cards tenham o mesmo padrão */
+.comanda-footer .btn-cancelar {
+    flex: 1;
+    padding: 8px;
+    background: rgba(239, 68, 68, 0.15);
+    border: none;
+    border-radius: 8px;
+    color: #ef4444;
+    cursor: pointer;
+    font-size: 0.7rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    transition: all 0.2s;
+}
+
+.comanda-footer .btn-cancelar:hover {
+    background: #ef4444;
+    color: white;
+    transform: translateY(-1px);
+}
+
+/* Ajuste para o modal de cancelamento no HTML */
+#modalJustificarCancelamento .btn-danger,
+#modalJustificarAusencia .btn-danger {
+    min-width: 160px;
+    justify-content: center;
+}
+
+#modalReativarComanda .btn-save,
+#modalReativarComandaCancelada .btn-save {
+    min-width: 160px;
+    justify-content: center;
+}
+
+/* Responsividade para os botões dos modais */
+@media (max-width: 480px) {
+    .form-actions {
+        flex-direction: column;
+    }
+    
+    .form-actions button {
+        width: 100%;
+        justify-content: center;
+    }
+    
+    .btn-cancel, .btn-save, .btn-danger {
+        padding: 12px 20px;
+        justify-content: center;
+    }
+}
