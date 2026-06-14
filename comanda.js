@@ -1,5 +1,5 @@
 // comanda.js - Versão Corrigida com NUMERAÇÃO DE COMANDAS FUNCIONANDO CORRETAMENTE
-// E SINCRONIZAÇÃO AUTOMÁTICA COM AGENDA
+// E SINCRONIZAÇÃO AUTOMÁTICA COM AGENDA + LIBERAÇÃO DE HORÁRIO (STATUS CANCELADO)
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { 
@@ -133,12 +133,10 @@ function getMetodoNome(metodo) {
 function dispararAtualizacaoAgenda() {
     console.log("📢 Disparando atualização da agenda...");
     
-    // Tentar chamar função global da agenda
     if (typeof window.atualizarAgenda === 'function') {
         window.atualizarAgenda();
     }
     
-    // Disparar evento personalizado
     const event = new CustomEvent('agendaAtualizada', { 
         detail: { 
             timestamp: Date.now(), 
@@ -148,7 +146,6 @@ function dispararAtualizacaoAgenda() {
     });
     window.dispatchEvent(event);
     
-    // Tentar via localStorage para comunicação entre abas
     try {
         localStorage.setItem('agendaAtualizada', JSON.stringify({ 
             timestamp: Date.now(), 
@@ -158,11 +155,108 @@ function dispararAtualizacaoAgenda() {
     } catch(e) {}
 }
 
-// ==================== FUNÇÃO PARA SINCRONIZAR AGENDAMENTO (CORRIGIDA) ====================
+// ==================== FUNÇÃO PARA LIBERAR HORÁRIO NA AGENDA (CORRIGIDA - STATUS CANCELADO) ====================
+
+async function liberarHorarioAgenda(comandaId, comandaData) {
+    try {
+        console.log("🔓 LIBERANDO HORÁRIO NA AGENDA para comanda:", comandaId);
+        
+        if (!comandaData.agendamentoId) {
+            console.log("⚠️ Comanda sem agendamento vinculado, não é possível liberar horário");
+            return false;
+        }
+        
+        const agendamentoRef = doc(db, "agendamentos", comandaData.agendamentoId);
+        const agendamentoDoc = await getDoc(agendamentoRef);
+        
+        if (!agendamentoDoc.exists()) {
+            console.log("⚠️ Agendamento não encontrado:", comandaData.agendamentoId);
+            return false;
+        }
+        
+        const agendamento = agendamentoDoc.data();
+        const dataAgendamento = agendamento.data;
+        const horarioAgendamento = agendamento.horario;
+        const profissionalId = agendamento.profissionalId;
+        const profissionalNome = agendamento.profissional;
+        
+        // MARCAR COMO CANCELADO - O agendamento.js vai IGNORAR este status
+        await updateDoc(agendamentoRef, {
+            status: "cancelado",
+            dataCancelamento: Timestamp.now(),
+            motivoCancelamento: comandaData.justificativaAusencia || "Cliente não compareceu - Horário liberado para novos agendamentos",
+            horarioLiberado: true,
+            dataLiberacao: Timestamp.now(),
+            liberadoPorAusencia: true,
+            atualizadoEm: Timestamp.now()
+        });
+        
+        console.log(`✅ Agendamento ${comandaData.agendamentoId} marcado como CANCELADO - horário ${horarioAgendamento} do dia ${dataAgendamento} está LIBERADO!`);
+        
+        dispararAtualizacaoAgenda();
+        
+        const event = new CustomEvent('horarioLiberado', { 
+            detail: { 
+                agendamentoId: comandaData.agendamentoId,
+                data: dataAgendamento,
+                horario: horarioAgendamento,
+                profissionalId: profissionalId,
+                profissionalNome: profissionalNome,
+                timestamp: Date.now(),
+                acao: "cancelado"
+            } 
+        });
+        window.dispatchEvent(event);
+        
+        if (typeof window.carregarAgenda === 'function') {
+            setTimeout(() => window.carregarAgenda(), 300);
+        }
+        
+        if (typeof window.recarregarHorariosDisponiveis === 'function') {
+            window.recarregarHorariosDisponiveis(dataAgendamento, profissionalId);
+        }
+        
+        if (typeof window.atualizarHorarios === 'function') {
+            setTimeout(() => window.atualizarHorarios(), 300);
+        }
+        
+        try {
+            const horarioLiberadoData = { 
+                agendamentoId: comandaData.agendamentoId,
+                data: dataAgendamento,
+                horario: horarioAgendamento,
+                profissionalId: profissionalId,
+                timestamp: Date.now(),
+                acao: "cancelado"
+            };
+            localStorage.setItem('horarioLiberado', JSON.stringify(horarioLiberadoData));
+            localStorage.setItem('forcarAtualizacaoAgenda', JSON.stringify({ 
+                timestamp: Date.now(), 
+                action: 'liberar_horario',
+                data: dataAgendamento,
+                horario: horarioAgendamento,
+                profissionalId: profissionalId
+            }));
+            setTimeout(() => {
+                localStorage.removeItem('horarioLiberado');
+                localStorage.removeItem('forcarAtualizacaoAgenda');
+            }, 1500);
+        } catch(e) {}
+        
+        console.log(`✅ Horário ${horarioAgendamento} do dia ${dataAgendamento} foi CANCELADO e estará DISPONÍVEL para novos agendamentos!`);
+        
+        return true;
+        
+    } catch (error) {
+        console.error("❌ Erro ao liberar horário na agenda:", error);
+        return false;
+    }
+}
+
+// ==================== FUNÇÃO PARA SINCRONIZAR AGENDAMENTO ====================
 
 async function sincronizarAgendamentoComComanda(comandaId, comandaData, novoStatusComanda) {
     try {
-        // Verificar se a comanda tem agendamento vinculado
         if (!comandaData.agendamentoId) {
             console.log("📝 Comanda sem agendamento vinculado, pulando sincronização");
             return false;
@@ -181,7 +275,6 @@ async function sincronizarAgendamentoComComanda(comandaId, comandaData, novoStat
         const agendamentoAtual = agendamentoDoc.data();
         let novoStatusAgendamento = null;
         
-        // Mapear status da comanda para status do agendamento
         if (novoStatusComanda === "finalizada") {
             novoStatusAgendamento = "concluido";
         } else if (novoStatusComanda === "cancelado") {
@@ -189,9 +282,6 @@ async function sincronizarAgendamentoComComanda(comandaId, comandaData, novoStat
         } else if (novoStatusComanda === "ausente") {
             novoStatusAgendamento = "ausente";
         } else if (novoStatusComanda === "aberta") {
-            // CORREÇÃO: Quando a comanda é reativada (aberta), 
-            // o agendamento deve voltar para "confirmado" independente 
-            // do status anterior (ausente ou cancelado)
             if (agendamentoAtual.status === "ausente" || agendamentoAtual.status === "cancelado") {
                 novoStatusAgendamento = "confirmado";
                 console.log(`🔄 Reativando agendamento de ${agendamentoAtual.status} para confirmado`);
@@ -213,17 +303,17 @@ async function sincronizarAgendamentoComComanda(comandaId, comandaData, novoStat
                 updateData.dataAusencia = Timestamp.now();
                 updateData.motivoAusencia = comandaData.justificativaAusencia || "Cliente não compareceu";
             } else if (novoStatusAgendamento === "confirmado") {
-                // Limpar os campos de cancelamento/ausência ao reativar
                 updateData.dataCancelamento = null;
                 updateData.motivoCancelamento = null;
                 updateData.dataAusencia = null;
                 updateData.motivoAusencia = null;
+                updateData.horarioLiberado = null;
+                updateData.dataLiberacao = null;
             }
             
             await updateDoc(agendamentoRef, updateData);
             console.log(`✅ Agendamento ${comandaData.agendamentoId} atualizado para status: ${novoStatusAgendamento}`);
             
-            // Disparar evento para atualizar a agenda em tempo real
             dispararAtualizacaoAgenda();
             
             return true;
@@ -1354,181 +1444,185 @@ async function podeFinalizarComanda(comandaData) {
     return { pode: true, mensagem: "" };
 }
 
-// ==================== FINALIZAR COMANDA ====================
-
-async function finalizarComanda(id) {
-    try {
-        console.log("🎯 Iniciando finalização da comanda:", id);
-        const comandaDoc = await getDoc(doc(db, "comandas", id));
-        if (!comandaDoc.exists()) {
-            mostrarToast("Comanda não encontrada", "erro");
-            return;
-        }
-        const comandaData = { id: comandaDoc.id, ...comandaDoc.data() };
-        
-        if (comandaData.status === "finalizada") {
-            mostrarToast("Comanda já está finalizada!", "erro");
-            return;
-        }
-        
-        const verificacao = await podeFinalizarComanda(comandaData);
-        if (!verificacao.pode) {
-            mostrarToast(verificacao.mensagem, "erro");
-            return;
-        }
-        
-        const produtosLista = comandaData.produtos || [];
-        const produtosNormais = produtosLista.filter(p => !p.isPreLancamento);
-        
-        for (const item of produtosNormais) {
-            const produtoRef = doc(db, "produtos", item.produtoId);
-            const produtoDoc = await getDoc(produtoRef);
-            if (produtoDoc.exists()) {
-                const produtoData = produtoDoc.data();
-                const novaQuantidade = Math.max(0, (produtoData.quantidade || 0) - (item.quantidade || 1));
-                await updateDoc(produtoRef, { quantidade: novaQuantidade, updatedAt: Timestamp.now() });
-                await addDoc(collection(db, "movimentacoes"), {
-                    produtoId: item.produtoId, produtoNome: item.nome, tipo: "saida",
-                    quantidade: item.quantidade || 1, quantidadeAnterior: produtoData.quantidade || 0,
-                    quantidadeNova: novaQuantidade, observacao: `Venda finalizada - Comanda #${comandaData.numeroComanda || id.slice(-6)}`,
-                    data: Timestamp.now(), usuario: "Sistema"
-                });
-                console.log(`📦 Estoque atualizado: ${item.nome} - nova quantidade: ${novaQuantidade}`);
-            }
-        }
-        
-        const produtosPreLancamento = produtosLista.filter(p => p.isPreLancamento === true);
-        for (const item of produtosPreLancamento) {
-            if (item.lembreteId) {
-                await updateDoc(doc(db, "lembretes_comanda", item.lembreteId), { status: "entregue", dataEntrega: Timestamp.now(), comandaFinalizadaId: id });
-                console.log(`✅ Pré-lançamento "${item.nome}" marcado como entregue`);
-            }
-        }
-        
-        if (comandaData.clienteId) {
-            const { totalFinal } = calcularTotaisComanda(comandaData);
-            if (totalFinal > 0) {
-                await adicionarPontosFidelidade(comandaData.clienteId, comandaData.clienteNome, totalFinal, "servico");
-            }
-        }
-        
-        await sincronizarPagamentoComFinanceiro(id, comandaData);
-        
-        // Sincronizar com agendamento
-        await sincronizarAgendamentoComComanda(id, comandaData, "finalizada");
-        
-        await updateDoc(doc(db, "comandas", id), { 
-            status: "finalizada", 
-            dataFinalizacao: Timestamp.now(), 
-            updatedAt: Timestamp.now() 
-        });
-        
-        console.log("✅ Comanda finalizada com sucesso!");
-        mostrarToast("Comanda finalizada com sucesso! Estoque atualizado e pagamento registrado.");
-        dispararAtualizacaoPagamento(id);
-        
-        if (filtrandoComandaEspecifica && comandaEspecificaId === id) {
-            setTimeout(() => filtrarPorIdComanda(id), 1000);
-        }
-        
-        if (typeof window.atualizarAgenda === 'function') {
-            setTimeout(() => window.atualizarAgenda(), 500);
-        }
-        
-    } catch (error) {
-        console.error("❌ Erro ao finalizar comanda:", error);
-        mostrarToast("Erro ao finalizar comanda: " + error.message, "erro");
-    }
-}
-
-// ==================== FUNÇÕES DE AUSÊNCIA ====================
-
-function abrirModalJustificarAusencia(comandaId) {
-    comandaParaAusencia = comandaId;
-    const justificativa = document.getElementById("justificativaAusencia");
-    if (justificativa) justificativa.value = "";
-    const modal = document.getElementById("modalJustificarAusencia");
-    if (modal) modal.classList.add("active");
-}
-
-function fecharModalJustificarAusencia() {
-    const modal = document.getElementById("modalJustificarAusencia");
-    if (modal) modal.classList.remove("active");
-    comandaParaAusencia = null;
-}
+// ==================== FUNÇÃO PARA MARCAR COMO AUSENTE (ATUALIZADA) ====================
 
 async function marcarComoAusente() {
     if (!comandaParaAusencia) return;
+    
     const justificativa = document.getElementById("justificativaAusencia")?.value || "";
+    const liberarHorario = document.querySelector('input[name="liberarHorarioAusencia"]:checked')?.value === "sim";
+    
     try {
-        const comandaDoc = await getDoc(doc(db, "comandas", comandaParaAusencia));
-        const comandaData = comandaDoc.data();
+        console.log("🚫 Marcando comanda como ausente:", comandaParaAusencia);
+        console.log("   Liberar horário na agenda:", liberarHorario);
         
-        // Sincronizar com agendamento ANTES de atualizar a comanda
-        await sincronizarAgendamentoComComanda(comandaParaAusencia, comandaData, "ausente");
+        const comandaRef = doc(db, "comandas", comandaParaAusencia);
+        const comandaDoc = await getDoc(comandaRef);
         
-        await updateDoc(doc(db, "comandas", comandaParaAusencia), {
-            status: "ausente", justificativaAusencia: justificativa, dataAusencia: Timestamp.now(), updatedAt: Timestamp.now()
-        });
-        
-        mostrarToast("Comanda marcada como ausente e agendamento atualizado!");
-        dispararAtualizacaoPagamento(comandaParaAusencia);
-        fecharModalJustificarAusencia();
-        
-        if (typeof window.atualizarAgenda === 'function') {
-            setTimeout(() => window.atualizarAgenda(), 500);
-        }
-        
-        if (typeof aplicarFiltros === 'function') aplicarFiltros();
-        
-    } catch (error) {
-        console.error("Erro ao marcar como ausente:", error);
-        mostrarToast("Erro ao marcar comanda como ausente", "erro");
-    }
-}
-
-function abrirModalReativarComanda(comandaId) {
-    comandaParaReativar = comandaId;
-    const modal = document.getElementById("modalReativarComanda");
-    if (modal) modal.classList.add("active");
-}
-
-function fecharModalReativarComanda() {
-    const modal = document.getElementById("modalReativarComanda");
-    if (modal) modal.classList.remove("active");
-    comandaParaReativar = null;
-}
-
-async function reativarComanda() {
-    if (!comandaParaReativar) return;
-    try {
-        const comandaDoc = await getDoc(doc(db, "comandas", comandaParaReativar));
         if (!comandaDoc.exists()) {
             mostrarToast("Comanda não encontrada", "erro");
             return;
         }
+        
         const comandaData = comandaDoc.data();
         
-        // Sincronizar com agendamento (reativar)
-        await sincronizarAgendamentoComComanda(comandaParaReativar, comandaData, "aberta");
-        
-        await updateDoc(doc(db, "comandas", comandaParaReativar), { status: "aberta", updatedAt: Timestamp.now() });
-        
-        mostrarToast("Comanda reativada com sucesso! Agendamento retornou para Confirmados.", "sucesso");
-        dispararAtualizacaoPagamento(comandaParaReativar);
-        fecharModalReativarComanda();
-        
-        if (typeof window.atualizarAgenda === 'function') {
-            setTimeout(() => window.atualizarAgenda(), 500);
+        if (liberarHorario) {
+            console.log("🔓 Liberando horário na agenda (marcando como CANCELADO)...");
+            await liberarHorarioAgenda(comandaParaAusencia, comandaData);
+            mostrarToast("✅ Horário liberado na agenda! Agora está disponível para novos agendamentos.", "sucesso");
+        } else {
+            if (comandaData.agendamentoId) {
+                const agendamentoRef = doc(db, "agendamentos", comandaData.agendamentoId);
+                const agendamentoDoc = await getDoc(agendamentoRef);
+                if (agendamentoDoc.exists()) {
+                    await updateDoc(agendamentoRef, {
+                        status: "ausente",
+                        dataAusencia: Timestamp.now(),
+                        motivoAusencia: justificativa,
+                        horarioLiberado: false,
+                        atualizadoEm: Timestamp.now()
+                    });
+                    console.log(`✅ Agendamento ${comandaData.agendamentoId} marcado como ausente (horário NÃO liberado)`);
+                }
+            }
+            mostrarToast("✅ Comanda marcada como ausente. Horário permanece reservado.", "sucesso");
         }
+        
+        await updateDoc(comandaRef, {
+            status: "ausente",
+            justificativaAusencia: justificativa,
+            dataAusencia: Timestamp.now(),
+            horarioLiberado: liberarHorario,
+            updatedAt: Timestamp.now()
+        });
+        
+        dispararAtualizacaoPagamento(comandaParaAusencia);
+        fecharModalJustificarAusencia();
+        
+        if (typeof aplicarFiltros === 'function') aplicarFiltros();
+        
+        if (filtrandoComandaEspecifica && comandaEspecificaId === comandaParaAusencia) {
+            setTimeout(() => filtrarPorIdComanda(comandaParaAusencia), 1000);
+        }
+        
+        dispararAtualizacaoAgenda();
+        
+        if (liberarHorario) {
+            setTimeout(() => {
+                mostrarToast("📅 O horário agora está disponível para novos agendamentos no painel de Agenda!", "sucesso");
+            }, 1500);
+        }
+        
+    } catch (error) {
+        console.error("❌ Erro ao marcar como ausente:", error);
+        mostrarToast("Erro ao marcar comanda como ausente: " + error.message, "erro");
+    }
+}
+
+// ==================== FUNÇÃO PARA REATIVAR COMANDA ====================
+
+async function reativarComanda() {
+    if (!comandaParaReativar) return;
+    
+    try {
+        console.log("🔄 Reativando comanda ausente:", comandaParaReativar);
+        
+        const comandaRef = doc(db, "comandas", comandaParaReativar);
+        const comandaDoc = await getDoc(comandaRef);
+        
+        if (!comandaDoc.exists()) {
+            mostrarToast("Comanda não encontrada", "erro");
+            return;
+        }
+        
+        const comandaData = comandaDoc.data();
+        
+        if (comandaData.agendamentoId) {
+            const agendamentoRef = doc(db, "agendamentos", comandaData.agendamentoId);
+            const agendamentoDoc = await getDoc(agendamentoRef);
+            
+            if (agendamentoDoc.exists()) {
+                const agendamento = agendamentoDoc.data();
+                
+                const agendamentosExistentes = await getDocs(query(
+                    collection(db, "agendamentos"),
+                    where("data", "==", agendamento.data),
+                    where("horario", "==", agendamento.horario),
+                    where("profissionalId", "==", agendamento.profissionalId),
+                    where("status", "in", ["confirmado", "pendente"])
+                ));
+                
+                if (!agendamentosExistentes.empty && agendamentosExistentes.docs[0].id !== comandaData.agendamentoId) {
+                    mostrarToast("⚠️ O horário original já foi ocupado por outro cliente! Será necessário reagendar.", "erro");
+                    
+                    const novoAgendamento = {
+                        nome: comandaData.clienteNome,
+                        clienteId: comandaData.clienteId,
+                        telefone: comandaData.clienteTelefone,
+                        profissional: comandaData.barbeiroNome,
+                        profissionalId: comandaData.barbeiroId,
+                        data: agendamento.data,
+                        horario: "A reagendar",
+                        status: "pendente_reagendamento",
+                        servicos: comandaData.servicos,
+                        valorTotal: comandaData.total,
+                        observacaoGeral: `Reagendamento necessário - Horário original ${agendamento.horario} foi ocupado`,
+                        createdAt: Timestamp.now(),
+                        atualizadoEm: Timestamp.now()
+                    };
+                    
+                    const novoAgendamentoRef = await addDoc(collection(db, "agendamentos"), novoAgendamento);
+                    await updateDoc(comandaRef, { 
+                        status: "aberta",
+                        agendamentoId: novoAgendamentoRef.id,
+                        precisaReagendar: true,
+                        horarioOriginal: agendamento.horario,
+                        updatedAt: Timestamp.now() 
+                    });
+                } else {
+                    await updateDoc(agendamentoRef, {
+                        status: "confirmado",
+                        dataCancelamento: null,
+                        motivoCancelamento: null,
+                        dataAusencia: null,
+                        motivoAusencia: null,
+                        horarioLiberado: null,
+                        dataLiberacao: null,
+                        liberadoPorAusencia: null,
+                        atualizadoEm: Timestamp.now()
+                    });
+                    
+                    await updateDoc(comandaRef, { 
+                        status: "aberta",
+                        horarioLiberado: null,
+                        precisaReagendar: false,
+                        updatedAt: Timestamp.now() 
+                    });
+                }
+            }
+        } else {
+            await updateDoc(comandaRef, { 
+                status: "aberta",
+                horarioLiberado: null,
+                updatedAt: Timestamp.now() 
+            });
+        }
+        
+        mostrarToast("✅ Comanda reativada com sucesso!", "sucesso");
+        
+        dispararAtualizacaoPagamento(comandaParaReativar);
+        dispararAtualizacaoAgenda();
+        
+        fecharModalReativarComanda();
         
         if (typeof aplicarFiltros === 'function') aplicarFiltros();
         
         if (filtrandoComandaEspecifica && comandaEspecificaId === comandaParaReativar) {
             setTimeout(() => filtrarPorIdComanda(comandaParaReativar), 1000);
         }
+        
     } catch (error) {
-        console.error("Erro ao reativar comanda:", error);
+        console.error("❌ Erro ao reativar comanda:", error);
         mostrarToast("Erro ao reativar comanda: " + error.message, "erro");
     }
 }
@@ -1556,7 +1650,6 @@ async function marcarComoCancelado() {
         const comandaDoc = await getDoc(doc(db, "comandas", comandaParaCancelamento));
         const comandaData = comandaDoc.data();
         
-        // Sincronizar com agendamento ANTES de atualizar a comanda
         await sincronizarAgendamentoComComanda(comandaParaCancelamento, comandaData, "cancelado");
         
         await updateDoc(doc(db, "comandas", comandaParaCancelamento), {
@@ -1601,7 +1694,6 @@ async function reativarComandaCancelada() {
         }
         const comandaData = comandaDoc.data();
         
-        // Sincronizar com agendamento (reativar)
         await sincronizarAgendamentoComComanda(comandaParaReativarCancelada, comandaData, "aberta");
         
         await updateDoc(doc(db, "comandas", comandaParaReativarCancelada), { status: "aberta", updatedAt: Timestamp.now() });
@@ -1623,6 +1715,32 @@ async function reativarComandaCancelada() {
         console.error("Erro ao reativar comanda cancelada:", error);
         mostrarToast("Erro ao reativar comanda: " + error.message, "erro");
     }
+}
+
+function abrirModalJustificarAusencia(comandaId) {
+    comandaParaAusencia = comandaId;
+    const justificativa = document.getElementById("justificativaAusencia");
+    if (justificativa) justificativa.value = "";
+    const modal = document.getElementById("modalJustificarAusencia");
+    if (modal) modal.classList.add("active");
+}
+
+function fecharModalJustificarAusencia() {
+    const modal = document.getElementById("modalJustificarAusencia");
+    if (modal) modal.classList.remove("active");
+    comandaParaAusencia = null;
+}
+
+function abrirModalReativarComanda(comandaId) {
+    comandaParaReativar = comandaId;
+    const modal = document.getElementById("modalReativarComanda");
+    if (modal) modal.classList.add("active");
+}
+
+function fecharModalReativarComanda() {
+    const modal = document.getElementById("modalReativarComanda");
+    if (modal) modal.classList.remove("active");
+    comandaParaReativar = null;
 }
 
 // ==================== FUNÇÕES DE COMANDA ====================
@@ -1776,6 +1894,90 @@ async function salvarComanda(finalizar = false) {
     }
     
     fecharModalComanda();
+}
+
+async function finalizarComanda(id) {
+    try {
+        console.log("🎯 Iniciando finalização da comanda:", id);
+        const comandaDoc = await getDoc(doc(db, "comandas", id));
+        if (!comandaDoc.exists()) {
+            mostrarToast("Comanda não encontrada", "erro");
+            return;
+        }
+        const comandaData = { id: comandaDoc.id, ...comandaDoc.data() };
+        
+        if (comandaData.status === "finalizada") {
+            mostrarToast("Comanda já está finalizada!", "erro");
+            return;
+        }
+        
+        const verificacao = await podeFinalizarComanda(comandaData);
+        if (!verificacao.pode) {
+            mostrarToast(verificacao.mensagem, "erro");
+            return;
+        }
+        
+        const produtosLista = comandaData.produtos || [];
+        const produtosNormais = produtosLista.filter(p => !p.isPreLancamento);
+        
+        for (const item of produtosNormais) {
+            const produtoRef = doc(db, "produtos", item.produtoId);
+            const produtoDoc = await getDoc(produtoRef);
+            if (produtoDoc.exists()) {
+                const produtoData = produtoDoc.data();
+                const novaQuantidade = Math.max(0, (produtoData.quantidade || 0) - (item.quantidade || 1));
+                await updateDoc(produtoRef, { quantidade: novaQuantidade, updatedAt: Timestamp.now() });
+                await addDoc(collection(db, "movimentacoes"), {
+                    produtoId: item.produtoId, produtoNome: item.nome, tipo: "saida",
+                    quantidade: item.quantidade || 1, quantidadeAnterior: produtoData.quantidade || 0,
+                    quantidadeNova: novaQuantidade, observacao: `Venda finalizada - Comanda #${comandaData.numeroComanda || id.slice(-6)}`,
+                    data: Timestamp.now(), usuario: "Sistema"
+                });
+                console.log(`📦 Estoque atualizado: ${item.nome} - nova quantidade: ${novaQuantidade}`);
+            }
+        }
+        
+        const produtosPreLancamento = produtosLista.filter(p => p.isPreLancamento === true);
+        for (const item of produtosPreLancamento) {
+            if (item.lembreteId) {
+                await updateDoc(doc(db, "lembretes_comanda", item.lembreteId), { status: "entregue", dataEntrega: Timestamp.now(), comandaFinalizadaId: id });
+                console.log(`✅ Pré-lançamento "${item.nome}" marcado como entregue`);
+            }
+        }
+        
+        if (comandaData.clienteId) {
+            const { totalFinal } = calcularTotaisComanda(comandaData);
+            if (totalFinal > 0) {
+                await adicionarPontosFidelidade(comandaData.clienteId, comandaData.clienteNome, totalFinal, "servico");
+            }
+        }
+        
+        await sincronizarPagamentoComFinanceiro(id, comandaData);
+        
+        await sincronizarAgendamentoComComanda(id, comandaData, "finalizada");
+        
+        await updateDoc(doc(db, "comandas", id), { 
+            status: "finalizada", 
+            dataFinalizacao: Timestamp.now(), 
+            updatedAt: Timestamp.now() 
+        });
+        
+        console.log("✅ Comanda finalizada com sucesso!");
+        mostrarToast("Comanda finalizada com sucesso! Estoque atualizado e pagamento registrado.");
+        dispararAtualizacaoPagamento(id);
+        
+        if (filtrandoComandaEspecifica && comandaEspecificaId === id) {
+            setTimeout(() => filtrarPorIdComanda(id), 1000);
+        }
+        
+        if (typeof window.atualizarAgenda === 'function') {
+            setTimeout(() => window.atualizarAgenda(), 500);
+        }
+        
+    } catch (error) {
+        console.error("❌ Erro ao finalizar comanda:", error);
+        mostrarToast("Erro ao finalizar comanda: " + error.message, "erro");
+    }
 }
 
 async function atualizarMetricas() {
@@ -2057,15 +2259,12 @@ function recalcularTotalComDesconto() {
 
 window.recalcularTotalComDesconto = recalcularTotalComDesconto;
 
-// ==================== FUNÇÃO SALVAR EDIÇÃO COMANDA ====================
-
 async function salvarEdicaoComanda() {
     if (!comandaEditando) {
         mostrarToast("Nenhuma comanda em edição", "erro");
         return;
     }
     
-    // Verificar estoque antes de salvar
     const produtosIndisponiveis = [];
     for (const p of (comandaEditando.produtos || [])) {
         if (!p.isPreLancamento) {
@@ -2081,7 +2280,6 @@ async function salvarEdicaoComanda() {
         return;
     }
     
-    // Capturar status atual da comanda antes de salvar
     const comandaOriginalRef = await getDoc(doc(db, "comandas", comandaEditando.id));
     const statusOriginal = comandaOriginalRef.exists() ? comandaOriginalRef.data().status : null;
     const novoStatus = comandaEditando.status || statusOriginal;
@@ -2103,7 +2301,6 @@ async function salvarEdicaoComanda() {
         updatedAt: Timestamp.now()
     };
     
-    // Se o status mudou, incluir no update
     if (novoStatus !== statusOriginal) {
         updateData.status = novoStatus;
         
@@ -2120,16 +2317,13 @@ async function salvarEdicaoComanda() {
     
     await updateDoc(doc(db, "comandas", comandaEditando.id), updateData);
     
-    // IMPORTANTE: Sincronizar com o agendamento se o status mudou
     const comandaAtualizada = { ...comandaEditando, ...updateData };
     
     if (novoStatus !== statusOriginal && (novoStatus === "finalizada" || novoStatus === "cancelado" || novoStatus === "ausente")) {
         console.log(`🔄 Status da comanda mudou para ${novoStatus}, sincronizando com agendamento...`);
         await sincronizarAgendamentoComComanda(comandaEditando.id, comandaAtualizada, novoStatus);
         
-        // Se foi finalizada, processar pontos de fidelidade e produtos
         if (novoStatus === "finalizada") {
-            // Atualizar estoque para produtos normais (não pré-lançamento)
             for (const item of (comandaEditando.produtos || [])) {
                 if (!item.isPreLancamento && item.produtoId) {
                     try {
@@ -2150,16 +2344,13 @@ async function salvarEdicaoComanda() {
                 }
             }
             
-            // Adicionar pontos de fidelidade
             if (comandaEditando.clienteId && comandaEditando.total > 0) {
                 await adicionarPontosFidelidade(comandaEditando.clienteId, comandaEditando.clienteNome, comandaEditando.total, "servico");
             }
             
-            // Sincronizar pagamento com financeiro
             await sincronizarPagamentoComFinanceiro(comandaEditando.id, comandaAtualizada);
         }
         
-        // Marcar pré-lançamentos como entregues se foi finalizada
         if (novoStatus === "finalizada") {
             for (const item of (comandaEditando.produtos || [])) {
                 if (item.isPreLancamento && item.lembreteId) {
@@ -2182,14 +2373,12 @@ async function salvarEdicaoComanda() {
     mostrarToast("Comanda atualizada com sucesso!");
     fecharModalEditar();
     
-    // Recarregar lista de comandas se não estiver em modo específico
     if (!filtrandoComandaEspecifica && typeof aplicarFiltros === 'function') {
         aplicarFiltros();
     } else if (filtrandoComandaEspecifica && comandaEspecificaId === comandaEditando.id) {
         setTimeout(() => filtrarPorIdComanda(comandaEditando.id), 1000);
     }
     
-    // Disparar atualização da agenda
     dispararAtualizacaoAgenda();
 }
 
@@ -2421,6 +2610,62 @@ function setupEventListeners() {
     configurarEventosDesconto();
 }
 
+// ==================== LISTENERS PARA HORÁRIOS LIBERADOS ====================
+
+window.addEventListener('horarioLiberado', (event) => {
+    console.log("🔔 Evento de horário liberado recebido:", event.detail);
+    
+    if (typeof window.carregarAgenda === 'function') {
+        setTimeout(() => window.carregarAgenda(), 300);
+    }
+    
+    if (typeof window.recarregarHorariosDisponiveis === 'function') {
+        window.recarregarHorariosDisponiveis(event.detail.data, event.detail.profissionalId);
+    }
+    
+    if (typeof window.atualizarHorarios === 'function') {
+        const dataInput = document.getElementById("data");
+        if (dataInput && dataInput.value === event.detail.data) {
+            setTimeout(() => window.atualizarHorarios(), 300);
+        }
+    }
+});
+
+window.addEventListener('storage', (e) => {
+    if (e.key === 'horarioLiberado' && e.newValue) {
+        try {
+            const data = JSON.parse(e.newValue);
+            console.log("🔔 Horário liberado detectado em outra aba:", data);
+            
+            if (typeof window.carregarAgenda === 'function') {
+                setTimeout(() => window.carregarAgenda(), 300);
+            }
+            
+            if (typeof window.atualizarHorarios === 'function') {
+                const dataInput = document.getElementById("data");
+                if (dataInput && dataInput.value === data.data) {
+                    setTimeout(() => window.atualizarHorarios(), 300);
+                }
+            }
+        } catch(e) {}
+    }
+    
+    if (e.key === 'forcarAtualizacaoAgenda' && e.newValue) {
+        try {
+            const data = JSON.parse(e.newValue);
+            console.log("🔔 Forçando atualização da agenda via localStorage:", data);
+            
+            if (typeof window.atualizarHorarios === 'function') {
+                setTimeout(() => window.atualizarHorarios(), 300);
+            }
+            
+            if (typeof window.carregarAgenda === 'function') {
+                setTimeout(() => window.carregarAgenda(), 300);
+            }
+        } catch(e) {}
+    }
+});
+
 // ==================== INICIALIZAÇÃO ====================
 
 onAuthStateChanged(auth, user => { 
@@ -2485,4 +2730,4 @@ window.sincronizarComandasAntigas = async function() {
 window.corrigirNumerosComandas = corrigirNumerosComandasAutomatico;
 window.dispararAtualizacaoAgenda = dispararAtualizacaoAgenda;
 
-console.log("comanda.js carregado com sucesso!");
+console.log("comanda.js carregado com sucesso! Versão com LIBERAÇÃO DE HORÁRIO NA AGENDA (STATUS CANCELADO)");
