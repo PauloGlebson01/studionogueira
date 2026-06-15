@@ -1292,7 +1292,6 @@ function renderizarHorarios(horariosDisponiveis = [], horariosIndisponiveis = []
     infoHeader.innerHTML = `
         <div>
             <h3 style="margin:0;color:#2199EF;">Horários Disponíveis - ${nomeDia}</h3>
-            <p style="margin:5px 0 0;font-size:0.75rem;color:#475569;">${infoAtendimento.mensagem}</p>
             <p style="margin:5px 0 0;font-size:0.7rem;color:#10b981;">
                 <i class="fa-regular fa-clock"></i> Duração total: ${duracaoFormatada}
             </p>
