@@ -1,4 +1,4 @@
-// bloqueios.js - CORREÇÃO DE DATAS (TIMEZONE LOCAL)
+// bloqueios.js - CORREÇÃO DE DATAS (TIMEZONE LOCAL) - VERSÃO COMPLETA
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
@@ -20,6 +20,7 @@ import {
     signOut 
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
+//CONFIGURAÇÕES DE DADOS
 const firebaseConfig = {
     apiKey: "AIzaSyC5xXm9T2nzh6xxZ5-zrMHfCNdqQOG8SZI",
     authDomain: "studio-nogueira-e07bb.firebaseapp.com",
@@ -28,7 +29,7 @@ const firebaseConfig = {
     messagingSenderId: "150077330983",
     appId: "1:150077330983:web:a49838c4cde9df4e1de002",
     measurementId: "G-WX477KDZQC"
-};
+  };
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
@@ -729,20 +730,30 @@ function mudarVisualizacao() {
     renderizarAgenda();
 }
 
-// ========== FUNÇÕES DE BLOQUEIO (MODAL) ==========
+// ========== FUNÇÕES DE BLOQUEIO (MODAL) - CORRIGIDAS ==========
 
 function abrirModalNovoBloqueio() {
     if (elementosDOM.modalTitle) elementosDOM.modalTitle.innerHTML = '<i class="fa-solid fa-plus"></i> Novo Bloqueio';
     if (elementosDOM.formBloqueio) elementosDOM.formBloqueio.reset();
     
-    const hoje = new Date().toISOString().split('T')[0];
-    const amanha = new Date();
+    // ========== CORREÇÃO: Usar data local para o input date ==========
+    const hoje = new Date();
+    const ano = hoje.getFullYear();
+    const mes = String(hoje.getMonth() + 1).padStart(2, '0');
+    const dia = String(hoje.getDate()).padStart(2, '0');
+    const hojeStr = `${ano}-${mes}-${dia}`;
+    
+    const amanha = new Date(hoje);
     amanha.setDate(amanha.getDate() + 1);
+    const amanhaAno = amanha.getFullYear();
+    const amanhaMes = String(amanha.getMonth() + 1).padStart(2, '0');
+    const amanhaDia = String(amanha.getDate()).padStart(2, '0');
+    const amanhaStr = `${amanhaAno}-${amanhaMes}-${amanhaDia}`;
     
     const dataInicio = document.getElementById('bloqueioDataInicio');
     const dataFim = document.getElementById('bloqueioDataFim');
-    if (dataInicio) dataInicio.value = hoje;
-    if (dataFim) dataFim.value = amanha.toISOString().split('T')[0];
+    if (dataInicio) dataInicio.value = hojeStr;
+    if (dataFim) dataFim.value = amanhaStr;
     
     if (elementosDOM.modalBloqueio) elementosDOM.modalBloqueio.classList.add('active');
 }
@@ -761,10 +772,18 @@ async function salvarBloqueio(event) {
         return;
     }
     
-    const dataInicio = new Date(dataInicioStr);
-    const dataFim = new Date(dataFimStr);
-    dataFim.setHours(23, 59, 59);
+    // ========== CORREÇÃO: Criar datas no timezone LOCAL ==========
+    // Em vez de usar new Date(dataInicioStr) que cria em UTC,
+    // vamos criar a data manualmente no fuso horário local
     
+    const [anoInicio, mesInicio, diaInicio] = dataInicioStr.split('-').map(Number);
+    const [anoFim, mesFim, diaFim] = dataFimStr.split('-').map(Number);
+    
+    // Criar data com horário local (meio-dia para evitar problemas de UTC)
+    const dataInicio = new Date(anoInicio, mesInicio - 1, diaInicio, 12, 0, 0);
+    const dataFim = new Date(anoFim, mesFim - 1, diaFim, 23, 59, 59);
+    
+    // Validação: dataInicio não pode ser maior que dataFim
     if (dataInicio > dataFim) {
         mostrarToast("Data de início não pode ser maior que data de fim", "erro");
         return;

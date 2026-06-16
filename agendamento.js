@@ -1,4 +1,4 @@
-// agendamento.js - Versão CORRIGIDA com MODAL para seleção de múltiplos clientes
+// agendamento.js - Versão CORRIGIDA com VERIFICAÇÃO DE BLOQUEIOS OTIMIZADA
 // E FILTRO DE HORÁRIOS QUE IGNORA STATUS AUSENTE/CANCELADO
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
@@ -80,7 +80,6 @@ let camposPreenchidos = { nome: false, telefone: false, profissional: false, dat
 let usuarioAutenticado = false;
 let servicosDisponiveis = [];
 let pacoteAtual = null;
-let bloqueiosCache = new Map();
 
 // ==================== FUNÇÕES DE UTILIDADE ====================
 
@@ -386,16 +385,13 @@ async function processarTelefoneCliente(telefone) {
     }
 }
 
-// ==================== FUNÇÃO PARA BUSCAR BLOQUEIOS ====================
+// ==================== FUNÇÃO PARA BUSCAR BLOQUEIOS (CORRIGIDA - SEM CACHE) ====================
 async function buscarBloqueios(data, profissionalId = null) {
     if (!data) return [];
     
-    const cacheKey = `${data}_${profissionalId || "todos"}`;
-    if (bloqueiosCache.has(cacheKey)) {
-        return bloqueiosCache.get(cacheKey);
-    }
-    
     try {
+        console.log(`🔍 Buscando bloqueios para data: ${data}, profissional: ${profissionalId || "todos"}`);
+        
         const bloqueiosRef = collection(db, "bloqueios");
         const q = query(bloqueiosRef, where("ativo", "==", true));
         const snapshot = await getDocs(q);
@@ -405,30 +401,65 @@ async function buscarBloqueios(data, profissionalId = null) {
         snapshot.forEach(doc => {
             const bloqueio = { id: doc.id, ...doc.data() };
             
-            let aplica = false;
+            console.log(`📋 Verificando bloqueio: ${bloqueio.titulo}`, bloqueio);
             
-            if (bloqueio.tipo === "dia" && bloqueio.data === data) {
-                aplica = true;
-            }
-            else if (bloqueio.tipo === "periodo") {
-                if (bloqueio.dataInicio <= data && bloqueio.dataFim >= data) {
-                    aplica = true;
+            // Converter datas para comparação
+            let dataInicio = null;
+            let dataFim = null;
+            
+            if (bloqueio.dataInicio) {
+                if (bloqueio.dataInicio.toDate) {
+                    const date = bloqueio.dataInicio.toDate();
+                    dataInicio = formatarDataComparacao(date);
+                } else if (typeof bloqueio.dataInicio === 'string') {
+                    dataInicio = bloqueio.dataInicio.split('T')[0];
+                } else if (bloqueio.dataInicio.seconds) {
+                    const date = new Date(bloqueio.dataInicio.seconds * 1000);
+                    dataInicio = formatarDataComparacao(date);
                 }
             }
-            else if (bloqueio.tipo === "horario" && bloqueio.data === data) {
-                aplica = true;
+            
+            if (bloqueio.dataFim) {
+                if (bloqueio.dataFim.toDate) {
+                    const date = bloqueio.dataFim.toDate();
+                    dataFim = formatarDataComparacao(date);
+                } else if (typeof bloqueio.dataFim === 'string') {
+                    dataFim = bloqueio.dataFim.split('T')[0];
+                } else if (bloqueio.dataFim.seconds) {
+                    const date = new Date(bloqueio.dataFim.seconds * 1000);
+                    dataFim = formatarDataComparacao(date);
+                }
             }
             
+            console.log(`   Data Início: ${dataInicio}, Data Fim: ${dataFim}, Data Verificação: ${data}`);
+            
+            // Verificar se a data está dentro do período do bloqueio
+            let aplica = false;
+            
+            // Verificar por período (dataInicio <= data <= dataFim)
+            if (dataInicio && dataFim && dataInicio <= data && dataFim >= data) {
+                aplica = true;
+                console.log(`   ✅ BLOQUEIO DE PERÍODO: ${data} está entre ${dataInicio} e ${dataFim}`);
+            }
+            
+            // Verificar se tem horários específicos
+            const temHorariosEspecificos = bloqueio.horarios && Array.isArray(bloqueio.horarios) && bloqueio.horarios.length > 0;
+            
             if (aplica) {
+                // Se tiver profissionalId específico, filtrar
                 if (bloqueio.profissionalId && profissionalId && bloqueio.profissionalId !== profissionalId) {
+                    console.log(`   ⏭️ Ignorado: profissional diferente`);
                     return;
                 }
                 bloqueios.push(bloqueio);
+                console.log(`   ✅ BLOQUEIO ADICIONADO: ${bloqueio.titulo}`);
             }
         });
         
-        bloqueiosCache.set(cacheKey, bloqueios);
-        setTimeout(() => bloqueiosCache.delete(cacheKey), 5 * 60 * 1000);
+        console.log(`📋 Encontrados ${bloqueios.length} bloqueios para esta data`);
+        bloqueios.forEach(b => {
+            console.log(`   - ${b.titulo}: horarios=${b.horarios?.join(', ') || 'todos'}`);
+        });
         
         return bloqueios;
         
@@ -438,15 +469,57 @@ async function buscarBloqueios(data, profissionalId = null) {
     }
 }
 
+// ==================== FUNÇÃO PARA FORMATAR DATA PARA COMPARAÇÃO ====================
+function formatarDataComparacao(data) {
+    if (!data) return '';
+    
+    try {
+        if (data instanceof Date) {
+            const ano = data.getFullYear();
+            const mes = String(data.getMonth() + 1).padStart(2, '0');
+            const dia = String(data.getDate()).padStart(2, '0');
+            return `${ano}-${mes}-${dia}`;
+        }
+        if (data.toDate) {
+            const date = data.toDate();
+            const ano = date.getFullYear();
+            const mes = String(date.getMonth() + 1).padStart(2, '0');
+            const dia = String(date.getDate()).padStart(2, '0');
+            return `${ano}-${mes}-${dia}`;
+        }
+        if (typeof data === 'string') {
+            if (data.includes('-')) {
+                return data.split('T')[0];
+            }
+            if (data.includes('/')) {
+                const [dia, mes, ano] = data.split('/');
+                return `${ano}-${mes}-${dia}`;
+            }
+        }
+        return data;
+    } catch (error) {
+        console.error("Erro ao formatar data:", error);
+        return data;
+    }
+}
+
 async function isHorarioBloqueado(data, horario, profissionalId) {
     const bloqueios = await buscarBloqueios(data, profissionalId);
     
     for (const bloqueio of bloqueios) {
-        if (bloqueio.tipo === "dia" || bloqueio.tipo === "periodo") {
+        // Verificar se é bloqueio de dia inteiro
+        const isDiaInteiro = !bloqueio.horarios || bloqueio.horarios.length === 0;
+        if (isDiaInteiro) {
+            console.log(`🔒 Horário ${horario} bloqueado - dia inteiro: ${bloqueio.titulo}`);
             return true;
         }
-        if (bloqueio.tipo === "horario" && bloqueio.horario === horario) {
-            return true;
+        
+        // Verificar se o horário específico está na lista de bloqueados
+        if (bloqueio.horarios && Array.isArray(bloqueio.horarios)) {
+            if (bloqueio.horarios.includes(horario)) {
+                console.log(`🔒 Horário ${horario} bloqueado especificamente: ${bloqueio.titulo}`);
+                return true;
+            }
         }
     }
     
@@ -1140,7 +1213,7 @@ function configurarDataMinima() {
     dataInput.min = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
 }
 
-// ==================== ATUALIZAR HORÁRIOS (CORRIGIDO - IGNORA STATUS AUSENTE/CANCELADO) ====================
+// ==================== ATUALIZAR HORÁRIOS (CORRIGIDO - COM VERIFICAÇÃO DE BLOQUEIOS) ====================
 async function atualizarHorarios() {
     const data = dataInput.value;
     const profissionalId = profissionalSelect?.value;
@@ -1173,9 +1246,44 @@ async function atualizarHorarios() {
     horariosDiv.innerHTML = '<div class="loading-horarios"><i class="fas fa-spinner fa-spin"></i> Verificando horários disponíveis...</div>';
     
     try {
+        // ========== BUSCAR BLOQUEIOS DO DIA (SEM CACHE) ==========
+        const bloqueios = await buscarBloqueios(data, profissionalId);
+        console.log(`🔒 Bloqueios encontrados para ${data}:`, bloqueios.length);
+        
+        // Verificar se há bloqueio de dia inteiro
+        const temBloqueioDiaInteiro = bloqueios.some(b => {
+            const isDiaInteiro = !b.horarios || b.horarios.length === 0;
+            console.log(`   Verificando ${b.titulo}: horarios=${b.horarios?.join(',') || 'vazio'}, isDiaInteiro=${isDiaInteiro}`);
+            return isDiaInteiro;
+        });
+        
+        if (temBloqueioDiaInteiro) {
+            const motivoBloqueio = bloqueios.find(b => !b.horarios || b.horarios.length === 0)?.motivo || "Estabelecimento fechado";
+            horariosDiv.innerHTML = `
+                <div class="aviso-campos erro">
+                    <i class="fa-solid fa-store-slash"></i>
+                    <p><strong>⚠️ Estabelecimento fechado neste dia</strong></p>
+                    <p style="font-size: 0.8rem; margin-top: 8px;">${motivoBloqueio}</p>
+                </div>
+            `;
+            return;
+        }
+        
+        // Coletar horários bloqueados manualmente
+        const horariosBloqueadosManualmente = new Set();
+        for (const bloqueio of bloqueios) {
+            if (bloqueio.horarios && Array.isArray(bloqueio.horarios)) {
+                bloqueio.horarios.forEach(h => {
+                    horariosBloqueadosManualmente.add(h);
+                    console.log(`   🔒 Horário bloqueado manualmente: ${h} (${bloqueio.titulo})`);
+                });
+            }
+        }
+        console.log(`🔒 Total de horários bloqueados manualmente: ${horariosBloqueadosManualmente.size}`);
+        
+        // ========== BUSCAR AGENDAMENTOS OCUPADOS ==========
         const agendamentosRef = collection(db, "agendamentos");
         
-        // Buscar TODOS os agendamentos da data e profissional
         const q = query(
             agendamentosRef, 
             where("data", "==", data), 
@@ -1185,7 +1293,7 @@ async function atualizarHorarios() {
         const snapshot = await getDocs(q);
         
         // Status que ocupam horário (confirmado ou pendente)
-        const statusOcupados = ["confirmado", "pendente"];
+        const statusOcupados = ["confirmado", "pendente", "aguardando_pagamento"];
         const horariosOcupados = [];
         
         console.log(`📊 TOTAL de agendamentos encontrados: ${snapshot.size}`);
@@ -1211,34 +1319,14 @@ async function atualizarHorarios() {
         
         console.log(`📊 Horários efetivamente ocupados: ${horariosOcupados.length}`);
         
-        const bloqueios = await buscarBloqueios(data, profissionalId);
-        const temBloqueioDiaInteiro = bloqueios.some(b => b.tipo === "dia" || b.tipo === "periodo");
-        
-        if (temBloqueioDiaInteiro) {
-            const motivoBloqueio = bloqueios.find(b => b.tipo === "dia" || b.tipo === "periodo")?.motivo || "Estabelecimento fechado";
-            horariosDiv.innerHTML = `
-                <div class="aviso-campos erro">
-                    <i class="fa-solid fa-store-slash"></i>
-                    <p><strong>⚠️ Estabelecimento fechado neste dia</strong></p>
-                    <p style="font-size: 0.8rem; margin-top: 8px;">${motivoBloqueio}</p>
-                </div>
-            `;
-            return;
-        }
-        
-        const horariosBloqueadosManualmente = new Set();
-        for (const bloqueio of bloqueios) {
-            if (bloqueio.tipo === "horario" && bloqueio.horario) {
-                horariosBloqueadosManualmente.add(bloqueio.horario);
-            }
-        }
-        
         const limiteMinutos = horarioParaMinutos(HORARIO_LIMITE);
         const horariosDisponiveis = [];
         const horariosIndisponiveis = [];
         
         for (const horarioBase of infoAtendimento.horarios) {
+            // ========== VERIFICAR BLOQUEIO MANUAL ==========
             if (horariosBloqueadosManualmente.has(horarioBase)) {
+                console.log(`   🔒 BLOQUEADO (manual): ${horarioBase}`);
                 horariosIndisponiveis.push(horarioBase);
                 continue;
             }
@@ -1251,6 +1339,7 @@ async function atualizarHorarios() {
                 continue;
             }
             
+            // ========== VERIFICAR CONFLITO COM AGENDAMENTOS ==========
             let conflito = false;
             for (const ocupado of horariosOcupados) {
                 const ocupadoInicio = horarioParaMinutos(ocupado.horario);
@@ -1425,7 +1514,7 @@ if (form) {
                 where("data", "==", data), 
                 where("horario", "==", horario),
                 where("profissionalId", "==", profissionalId),
-                where("status", "in", ["confirmado", "pendente"])
+                where("status", "in", ["confirmado", "pendente", "aguardando_pagamento"])
             );
             const existingSnap = await getDocs(q);
             
@@ -1437,7 +1526,7 @@ if (form) {
             
             const isBloqueado = await isHorarioBloqueado(data, horario, profissionalId);
             if (isBloqueado) {
-                mostrarMensagem("❌ Este horário não está mais disponível. Por favor, selecione outro horário.", "erro");
+                mostrarMensagem("❌ Este horário está bloqueado. Por favor, selecione outro horário.", "erro");
                 await atualizarHorarios();
                 return;
             }
