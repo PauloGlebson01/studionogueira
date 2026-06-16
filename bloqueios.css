@@ -1,4 +1,20 @@
-/* Estilos específicos para a página de bloqueios */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+:root {
+    --bg-dark: #0f0f0f;
+    --bg-card: #1a1a1a;
+    --border-color: #2a2a2a;
+    --text-main: #ffffff;
+    --text-muted: #a0a0a0;
+    --primary: #2199EF;
+    --primary-dark: #1a7fcc;
+    --primary-gradient: linear-gradient(135deg, #2199EF, #1a7fcc);
+}
+
 .bloqueios-container {
     background: var(--bg-card);
     border-radius: 20px;
@@ -35,7 +51,7 @@
     cursor: pointer;
     font-size: 0.85rem;
     font-weight: 600;
-    display: flex;
+    display: inline-flex;
     align-items: center;
     gap: 8px;
     transition: all 0.2s;
@@ -85,6 +101,10 @@
     animation: modalSlideIn 0.3s ease;
 }
 
+.modal-small {
+    max-width: 450px;
+}
+
 @keyframes modalSlideIn {
     from {
         opacity: 0;
@@ -102,6 +122,8 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+    background: var(--bg-card);
+    border-radius: 24px 24px 0 0;
 }
 
 .modal-header h3 {
@@ -109,16 +131,19 @@
     display: flex;
     align-items: center;
     gap: 10px;
+    margin: 0;
+    color: var(--text-main);
 }
 
 .modal-close {
     background: none;
     border: none;
     color: var(--text-muted);
-    font-size: 1.2rem;
+    font-size: 1.5rem;
     cursor: pointer;
     padding: 8px;
     transition: all 0.2s;
+    line-height: 1;
 }
 
 .modal-close:hover {
@@ -129,12 +154,14 @@
     padding: 24px;
 }
 
-.modal-footer {
-    padding: 16px 24px;
-    border-top: 1px solid var(--border-color);
+.form-actions {
     display: flex;
     justify-content: flex-end;
     gap: 12px;
+    padding: 20px 24px;
+    border-top: 1px solid var(--border-color);
+    background: var(--bg-card);
+    border-radius: 0 0 24px 24px;
 }
 
 .form-group {
@@ -156,7 +183,6 @@
     width: 20px;
 }
 
-/* Campos de formulário - Tamanho padrão */
 .form-group input,
 .form-group select,
 .form-group textarea {
@@ -171,7 +197,6 @@
     box-sizing: border-box;
 }
 
-/* Garantir tamanho padrão para todos os inputs */
 input[type="date"],
 input[type="text"],
 input[type="email"],
@@ -189,13 +214,11 @@ textarea {
     box-sizing: border-box;
 }
 
-/* Altura específica para campo data */
 input[type="date"] {
     min-height: 48px;
     cursor: pointer;
 }
 
-/* Altura específica para textarea */
 textarea {
     min-height: 80px;
     resize: vertical;
@@ -215,7 +238,6 @@ textarea {
     gap: 16px;
 }
 
-/* Container dos horários - Corrigido para mobile */
 .horarios-checkboxes {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(85px, auto));
@@ -229,7 +251,6 @@ textarea {
     border: 1px solid var(--border-color);
 }
 
-/* Estilo de cada horário */
 .horario-check {
     display: flex;
     align-items: center;
@@ -296,6 +317,7 @@ textarea {
     align-items: center;
     gap: 8px;
     flex-wrap: wrap;
+    color: var(--text-main);
 }
 
 .bloqueio-info .badge {
@@ -345,12 +367,42 @@ textarea {
     text-align: center;
     padding: 60px 20px;
     color: var(--text-muted);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
 }
 
 .empty-state i {
     font-size: 3rem;
     margin-bottom: 16px;
     opacity: 0.5;
+}
+
+.empty-state p {
+    margin-bottom: 20px;
+}
+
+.empty-state .btn-bloqueio {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: var(--primary-gradient);
+    border: none;
+    color: white;
+    padding: 10px 20px;
+    border-radius: 12px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 600;
+    transition: all 0.2s;
+    margin-top: 8px;
+}
+
+.empty-state .btn-bloqueio:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(33, 153, 239, 0.3);
 }
 
 .tabs {
@@ -373,6 +425,10 @@ textarea {
     cursor: pointer;
     border-radius: 10px;
     transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
 }
 
 .tab-btn.active {
@@ -387,6 +443,21 @@ textarea {
 .tab-pane.active {
     display: block;
     animation: fadeIn 0.3s ease;
+}
+
+.tab-btn.active .realtime-badge {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+}
+
+.tab-btn.active .realtime-badge i {
+    animation: pulse 1.5s infinite;
+    color: #10b981;
+}
+
+/* Efeito de ondulação ao clicar */
+.tab-btn:active {
+    transform: scale(0.98);
 }
 
 @keyframes fadeIn {
@@ -416,47 +487,446 @@ textarea {
     min-width: 200px;
 }
 
-/* Notificação - Tamanho compacto */
-.notification {
+.btn-save {
+    background: linear-gradient(135deg, #2199EF, #1a7fcc);
+    color: white;
+    border: none;
+    padding: 10px 24px;
+    border-radius: 12px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.btn-save:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(33, 153, 239, 0.3);
+}
+
+.btn-cancel {
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid var(--border-color);
+    padding: 10px 24px;
+    border-radius: 12px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.btn-cancel:hover {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+    border-color: #ef4444;
+    transform: translateY(-2px);
+}
+
+.btn-danger {
+    background: linear-gradient(135deg, #ef4444, #dc2626);
+    color: white;
+    border: none;
+    padding: 10px 24px;
+    border-radius: 12px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.btn-danger:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+}
+
+.toast {
     position: fixed;
     bottom: 20px;
     right: 20px;
-    background: linear-gradient(135deg, #10b981, #059669);
+    background: linear-gradient(135deg, #2199EF, #1a7fcc);
     color: white;
-    padding: 10px 16px;
-    border-radius: 10px;
+    padding: 12px 20px;
+    border-radius: 12px;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     z-index: 10001;
-    font-size: 0.8rem;
+    font-size: 0.85rem;
     font-weight: 500;
-    box-shadow: 0 3px 10px rgba(0,0,0,0.2);
-    animation: slideInRight 0.3s ease;
-    max-width: 300px;
-    pointer-events: none;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    transform: translateX(100%);
+    transition: transform 0.3s ease;
 }
 
-.notification i {
+.toast.show {
+    transform: translateX(0);
+}
+
+/* ==================== VISUALIZAÇÃO DE AGENDA ==================== */
+
+.agenda-controls {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.periodo-label {
+    font-weight: 600;
+    color: var(--primary);
+    background: rgba(33, 153, 239, 0.1);
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    min-width: 200px;
+    text-align: center;
+}
+
+.tipo-visualizacao {
+    padding: 8px 16px;
+    background: var(--bg-dark);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    color: var(--text-main);
+    font-size: 0.8rem;
+    cursor: pointer;
+}
+
+.agenda-semana {
+    overflow-x: auto;
+    background: var(--bg-card);
+    border-radius: 16px;
+    border: 1px solid var(--border-color);
+}
+
+.agenda-cabecalho {
+    display: flex;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-dark);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.agenda-hora-coluna {
+    width: 80px;
+    min-width: 80px;
+    padding: 12px 8px;
+    font-weight: 600;
+    font-size: 0.75rem;
+    text-align: center;
+    border-right: 1px solid var(--border-color);
+    color: var(--text-muted);
+}
+
+.agenda-dia-coluna {
+    flex: 1;
+    min-width: 100px;
+    padding: 12px 8px;
+    text-align: center;
+    border-right: 1px solid var(--border-color);
+}
+
+.agenda-dia-coluna:last-child {
+    border-right: none;
+}
+
+.dia-nome {
+    font-weight: 700;
+    font-size: 0.8rem;
+    color: var(--primary);
+}
+
+.dia-data {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+}
+
+.agenda-corpo {
+    display: flex;
+    flex-direction: column;
+}
+
+.agenda-linha {
+    display: flex;
+    border-bottom: 1px solid var(--border-color);
+    min-height: 80px;
+}
+
+.agenda-linha:last-child {
+    border-bottom: none;
+}
+
+.agenda-hora {
+    width: 80px;
+    min-width: 80px;
+    padding: 8px;
+    font-size: 0.7rem;
+    text-align: center;
+    border-right: 1px solid var(--border-color);
+    background: var(--bg-dark);
+    color: var(--text-muted);
+}
+
+.agenda-celula {
+    flex: 1;
+    padding: 6px;
+    border-right: 1px solid var(--border-color);
+    min-width: 100px;
+}
+
+.agenda-celula:last-child {
+    border-right: none;
+}
+
+.agendamento-card {
+    background: rgba(33, 153, 239, 0.1);
+    border-left: 3px solid var(--primary);
+    border-radius: 8px;
+    padding: 6px 8px;
+    margin-bottom: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.agendamento-card:hover {
+    transform: translateX(2px);
+    background: rgba(33, 153, 239, 0.2);
+}
+
+.agendamento-cliente {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--text-main);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.agendamento-servico {
+    font-size: 0.6rem;
+    color: var(--text-muted);
+}
+
+.agendamento-profissional {
+    font-size: 0.6rem;
+    color: var(--primary);
+}
+
+.agendamento-vazio {
+    height: 48px;
+}
+
+.agenda-mes {
+    background: var(--bg-card);
+    border-radius: 16px;
+    border: 1px solid var(--border-color);
+    overflow-x: auto;
+}
+
+.mes-cabecalho {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    background: var(--bg-dark);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.mes-dia-semana {
+    padding: 12px;
+    text-align: center;
+    font-weight: 600;
+    font-size: 0.7rem;
+    color: var(--primary);
+    text-transform: uppercase;
+}
+
+.mes-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+}
+
+.mes-dia {
+    min-height: 100px;
+    padding: 8px;
+    border-right: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--border-color);
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.mes-dia:hover {
+    background: rgba(33, 153, 239, 0.05);
+}
+
+.mes-dia.hoje {
+    background: rgba(33, 153, 239, 0.1);
+    border: 2px solid var(--primary);
+}
+
+.mes-dia.vazio {
+    background: var(--bg-dark);
+    opacity: 0.5;
+}
+
+.mes-dia-numero {
+    font-size: 0.8rem;
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: var(--text-main);
+}
+
+.mes-agendamentos {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.mes-agendamento-item {
+    font-size: 0.65rem;
+    padding: 2px 6px;
+    background: rgba(33, 153, 239, 0.1);
+    border-radius: 4px;
+    color: var(--primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+}
+
+.mes-agendamento-item:hover {
+    background: rgba(33, 153, 239, 0.2);
+}
+
+.mes-agendamento-mais {
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    text-align: center;
+    margin-top: 2px;
+}
+
+.agenda-dia {
+    background: var(--bg-card);
+    border-radius: 16px;
+    border: 1px solid var(--border-color);
+    overflow: hidden;
+}
+
+.dia-resumo {
+    padding: 16px 20px;
+    background: var(--bg-dark);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.resumo-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 600;
+    color: var(--primary);
+}
+
+.dia-agendamentos {
+    display: flex;
+    flex-direction: column;
+}
+
+.agendamento-detalhado {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border-color);
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.agendamento-detalhado:hover {
+    background: rgba(33, 153, 239, 0.05);
+}
+
+.agendamento-hora {
+    min-width: 70px;
+    font-weight: 700;
+    color: var(--primary);
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.agendamento-conteudo {
+    flex: 1;
+}
+
+.agendamento-cliente-nome {
+    font-size: 0.9rem;
+    margin-bottom: 6px;
+    color: var(--text-main);
+}
+
+.agendamento-info {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.agendamento-servico-tag {
+    font-size: 0.7rem;
+    padding: 2px 8px;
+    background: rgba(33, 153, 239, 0.1);
+    border-radius: 12px;
+    color: var(--primary);
+}
+
+.agendamento-profissional-tag {
+    font-size: 0.7rem;
+    padding: 2px 8px;
+    background: var(--bg-dark);
+    border-radius: 12px;
+    color: var(--text-muted);
+}
+
+.agendamento-obs {
+    margin-top: 6px;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+}
+
+.agendamento-valor {
+    font-weight: 700;
+    color: #10b981;
     font-size: 0.9rem;
 }
 
-.notification span {
-    white-space: nowrap;
+.loading-agenda {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-muted);
 }
 
-@keyframes slideInRight {
-    from {
-        transform: translateX(100%);
-        opacity: 0;
-    }
-    to {
-        transform: translateX(0);
-        opacity: 1;
-    }
+.realtime-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(16, 185, 129, 0.15);
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 0.65rem;
+    color: #10b981;
+    margin-left: 8px;
 }
 
-/* ==================== RESPONSIVIDADE MOBILE ==================== */
+.realtime-badge i {
+    font-size: 0.6rem;
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
 @media (max-width: 768px) {
     .bloqueios-container {
         padding: 16px;
@@ -476,7 +946,6 @@ textarea {
         justify-content: flex-end;
     }
     
-    /* Ajuste dos horários para mobile */
     .horarios-checkboxes {
         grid-template-columns: repeat(auto-fill, minmax(75px, auto));
         gap: 6px;
@@ -492,7 +961,6 @@ textarea {
         font-size: 0.7rem;
     }
     
-    /* Ajuste do modal para mobile */
     .modal-content {
         width: 95%;
         max-height: 85vh;
@@ -506,32 +974,51 @@ textarea {
         padding: 16px 20px;
     }
     
-    .modal-footer {
+    .form-actions {
         padding: 12px 20px;
     }
     
-    /* Rolagem suave para os horários */
-    .horarios-checkboxes {
-        -webkit-overflow-scrolling: touch;
-        scrollbar-width: thin;
+    .agenda-controls {
+        flex-direction: column;
+        align-items: stretch;
     }
     
-    /* Notificação mobile */
-    .notification {
-        bottom: 10px;
-        right: 10px;
-        left: 10px;
-        max-width: none;
-        padding: 8px 12px;
+    .periodo-label {
+        text-align: center;
     }
     
-    .notification span {
-        white-space: normal;
-        font-size: 0.75rem;
+    .agenda-celula {
+        min-width: 80px;
+    }
+    
+    .agendamento-cliente {
+        font-size: 0.6rem;
+    }
+    
+    .mes-dia {
+        min-height: 70px;
+        padding: 4px;
+    }
+    
+    .mes-dia-numero {
+        font-size: 0.7rem;
+    }
+    
+    .mes-agendamento-item {
+        font-size: 0.55rem;
+    }
+    
+    .agendamento-detalhado {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+    
+    .agendamento-valor {
+        align-self: flex-end;
     }
 }
 
-/* Para telas muito pequenas */
 @media (max-width: 480px) {
     .horarios-checkboxes {
         grid-template-columns: repeat(auto-fill, minmax(68px, auto));
@@ -570,9 +1057,25 @@ textarea {
     .tab-btn {
         text-align: center;
     }
+    
+    .agenda-hora-coluna,
+    .agenda-hora {
+        width: 60px;
+        min-width: 60px;
+    }
+    
+    .agenda-dia-coluna {
+        min-width: 70px;
+    }
+    
+    .toast {
+        bottom: 10px;
+        right: 10px;
+        left: 10px;
+        max-width: none;
+    }
 }
 
-/* Estilizar scrollbar para os horários */
 .horarios-checkboxes::-webkit-scrollbar {
     width: 4px;
     height: 4px;
@@ -588,6 +1091,84 @@ textarea {
     border-radius: 4px;
 }
 
-.horarios-checkboxes::-webkit-scrollbar-thumb:hover {
-    background: var(--primary-dark);
+/* Estilos para dias sem atendimento */
+.dia-fechado {
+    background: rgba(239, 68, 68, 0.1);
+    opacity: 0.7;
+}
+
+.dia-fechado-label {
+    font-size: 0.6rem;
+    color: #ef4444;
+    margin-top: 4px;
+    font-weight: bold;
+}
+
+.dia-fechado-celula {
+    background: rgba(239, 68, 68, 0.05);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.sem-atendimento {
+    font-size: 0.6rem;
+    color: #ef4444;
+    text-align: center;
+    font-weight: 500;
+}
+
+.mes-dia.dia-fechado {
+    background: rgba(239, 68, 68, 0.05);
+    opacity: 0.8;
+    cursor: default;
+}
+
+.mes-fechado {
+    font-size: 0.6rem;
+    color: #ef4444;
+    text-align: center;
+    margin-top: 8px;
+    font-weight: bold;
+}
+
+.agendamento-status-tag {
+    font-size: 0.65rem;
+    padding: 2px 8px;
+    background: #f59e0b;
+    border-radius: 12px;
+    color: white;
+}
+
+.agendamento-status-tag i {
+    font-size: 0.5rem;
+    margin-right: 4px;
+}
+
+/* Container com scroll horizontal para horários */
+.horarios-scroll-container {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: 12px;
+    padding: 12px 8px;
+    background: #f8f9fa;
+    border-radius: 12px;
+    margin-top: 8px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+}
+
+.horarios-scroll-container::-webkit-scrollbar {
+    height: 6px;
+}
+
+.horarios-scroll-container::-webkit-scrollbar-track {
+    background: #e2e8f0;
+    border-radius: 10px;
+}
+
+.horarios-scroll-container::-webkit-scrollbar-thumb {
+    background: #2199EF;
+    border-radius: 10px;
 }

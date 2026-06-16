@@ -3,10 +3,10 @@
 
 <head>
     <meta charset="UTF-8">
+    <title>Bloqueios & Agenda | Studio Nogueira</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes, viewport-fit=cover">
     <meta name="theme-color" content="#2199EF">
-    <title>Gerenciar Bloqueios | Studio Nogueira</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="dashboard.css">
     <link rel="stylesheet" href="bloqueios.css">
@@ -15,46 +15,13 @@
 
 <body>
 
-    <!-- VERIFICAÇÃO DE AUTENTICAÇÃO DO ADMIN -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-        import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-        
-            //CONFIGURAÇÕES DE DADOS
-        const firebaseConfig = {
-            apiKey: "AIzaSyC5xXm9T2nzh6xxZ5-zrMHfCNdqQOG8SZI",
-            authDomain: "studio-nogueira-e07bb.firebaseapp.com",
-            projectId: "studio-nogueira-e07bb",
-            storageBucket: "studio-nogueira-e07bb.firebasestorage.app",
-            messagingSenderId: "150077330983",
-            appId: "1:150077330983:web:a49838c4cde9df4e1de002",
-            measurementId: "G-WX477KDZQC"
-        };
-
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-
-        const isAdminSession = sessionStorage.getItem('admin_active') === 'true';
-        const adminSessionId = sessionStorage.getItem('admin_session_id');
-
-        if (!isAdminSession || !adminSessionId) {
-            window.location.href = 'login.html';
-        }
-
-        onAuthStateChanged(auth, (user) => {
-            if (!user) {
-                console.log("⚠️ Usuário Firebase não autenticado");
-            }
-        });
-    </script>
-
     <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Abrir menu">
         <i class="fa-solid fa-bars"></i>
     </button>
 
     <div class="mobile-overlay" id="mobileOverlay"></div>
 
-    <div class="wrapper">
+    <div class="wrapper" id="painel">
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-header">
                 <img src="assets/studio-nogueira-index.jpg" alt="Logo" class="sidebar-logo">
@@ -118,15 +85,14 @@
                     </li>
                     <li class="nav-separator">Treinamentos</li>
                     <li class="nav-item">
-                        <a href="cursos.html"><i class="fa-solid fa-graduation-cap"></i> <span>Cursos &
-                                Treinamentos</span></a>
+                        <a href="cursos.html"><i class="fa-solid fa-graduation-cap"></i> <span>Cursos & Treinamentos</span></a>
                     </li>
                     <li class="nav-separator">Administração</li>
                     <li class="nav-item">
                         <a href="barbeiros.html"><i class="fa-solid fa-user-md"></i> <span>Barbeiros</span></a>
                     </li>
                     <li class="nav-item active">
-                        <a href="bloqueios.html"><i class="fa-solid fa-lock"></i> <span>Bloqueios</span></a>
+                        <a href="bloqueios.html"><i class="fa-solid fa-lock"></i> <span>Bloqueios & Agenda</span></a>
                     </li>
                     <li class="nav-item">
                         <a href="exportacoes.html"><i class="fa-solid fa-chart-pie"></i> <span>Exportações</span></a>
@@ -154,48 +120,79 @@
         <main class="main-content">
             <header class="topbar">
                 <div class="topbar-left">
-                    <h1>🔒 Gerenciar Bloqueios</h1>
-                    <p>Controle dias e horários indisponíveis para agendamentos</p>
+                    <h1>🔒 Gerenciamento de Bloqueios & Agenda</h1>
+                    <p>Controle de bloqueios de horários e visualização completa da agenda em tempo real</p>
+                </div>
+                <div class="topbar-actions">
                 </div>
             </header>
 
             <div class="container-fluid">
-                <div class="bloqueios-container">
-                    <div class="bloqueios-header">
-                        <h2><i class="fa-solid fa-calendar-times"></i> Bloqueios de Agenda</h2>
-                        <button class="btn-bloqueio" id="btnNovoBloqueio">
-                            <i class="fa-solid fa-plus"></i> Novo Bloqueio
-                        </button>
-                    </div>
+                <div class="tabs">
+                    <button class="tab-btn active" data-tab="bloqueios">
+                        <i class="fa-solid fa-lock"></i> Bloqueios
+                    </button>
+                    <button class="tab-btn" data-tab="agenda-visualizacao">
+                        <i class="fa-solid fa-calendar-alt"></i> Visualização de Agenda 
+                        <span class="realtime-badge">
+                            <i class="fa-solid fa-circle"></i> Em tempo real
+                        </span>
+                    </button>
+                </div>
 
-                    <div class="tabs">
-                        <button class="tab-btn active" data-tab="ativos">📋 Bloqueios Ativos</button>
-                        <button class="tab-btn" data-tab="historico">📅 Histórico</button>
-                    </div>
+                <div class="tab-pane active" id="tab-bloqueios">
+                    <div class="bloqueios-container">
+                        <div class="bloqueios-header">
+                            <h2><i class="fa-solid fa-lock"></i> Bloqueios de Horários</h2>
+                            <button class="btn-bloqueio" id="btnNovoBloqueio">
+                                <i class="fa-solid fa-plus"></i> Novo Bloqueio
+                            </button>
+                        </div>
 
-                    <div id="tab-ativos" class="tab-pane active">
                         <div class="filter-bar">
-                            <input type="text" id="filtroBusca" placeholder="🔍 Buscar por data, motivo ou tipo...">
-                            <select id="filtroTipo">
-                                <option value="">Todos os tipos</option>
-                                <option value="dia">Dia Inteiro</option>
-                                <option value="periodo">Período</option>
-                                <option value="horario">Horário Específico</option>
+                            <input type="text" id="searchBloqueio" placeholder="Buscar bloqueio por título ou motivo...">
+                            <select id="filterBloqueioStatus">
+                                <option value="todos">Todos os status</option>
+                                <option value="ativo">Ativos</option>
+                                <option value="expirado">Expirados</option>
                             </select>
                         </div>
-                        <div id="bloqueiosAtivos" class="bloqueios-list">
+
+                        <div id="bloqueiosList" class="bloqueios-list">
                             <div class="empty-state">
                                 <i class="fa-solid fa-spinner fa-spin"></i>
                                 <p>Carregando bloqueios...</p>
                             </div>
                         </div>
                     </div>
+                </div>
 
-                    <div id="tab-historico" class="tab-pane">
-                        <div id="bloqueiosHistorico" class="bloqueios-list">
-                            <div class="empty-state">
-                                <i class="fa-solid fa-spinner fa-spin"></i>
-                                <p>Carregando histórico...</p>
+                <div class="tab-pane" id="tab-agenda-visualizacao">
+                    <div class="bloqueios-container">
+                        <div class="bloqueios-header">
+                            <h2><i class="fa-solid fa-calendar-alt"></i> Visualização de Agendamentos</h2>
+                            <div class="agenda-controls">
+                                <button class="btn-bloqueio" id="btnHoje">
+                                    <i class="fa-solid fa-calendar-day"></i> Hoje
+                                </button>
+                                <button class="btn-bloqueio btn-bloqueio-secondary" id="btnSemanaAnterior">
+                                    <i class="fa-solid fa-chevron-left"></i>
+                                </button>
+                                <span id="periodoLabel" class="periodo-label"></span>
+                                <button class="btn-bloqueio btn-bloqueio-secondary" id="btnProximaSemana">
+                                    <i class="fa-solid fa-chevron-right"></i>
+                                </button>
+                                <select id="tipoVisualizacao" class="tipo-visualizacao">
+                                    <option value="semana">📅 Semana</option>
+                                    <option value="mes">📆 Mês</option>
+                                    <option value="dia">🕐 Dia</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div id="agendaVisualizacao" class="agenda-visualizacao-container">
+                            <div class="loading-agenda">
+                                <i class="fa-solid fa-spinner fa-spin"></i> Carregando agendamentos...
                             </div>
                         </div>
                     </div>
@@ -204,136 +201,110 @@
         </main>
     </div>
 
-    <!-- MODAL DE CRIAÇÃO -->
     <div id="modalBloqueio" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3><i class="fa-solid fa-lock"></i> <span id="modalTitle">Novo Bloqueio</span></h3>
-                <button class="modal-close" onclick="closeModal()"><i class="fa-solid fa-times"></i></button>
+                <h3 id="modalTitle"><i class="fa-solid fa-plus"></i> Novo Bloqueio</h3>
+                <button class="modal-close modal-close-bloqueio">&times;</button>
             </div>
             <form id="formBloqueio">
                 <div class="modal-body">
-                    <input type="hidden" id="bloqueioId">
-
                     <div class="form-group">
-                        <label><i class="fa-solid fa-tag"></i> Tipo de Bloqueio</label>
-                        <select id="tipoBloqueio" required>
-                            <option value="dia">Dia Inteiro</option>
-                            <option value="periodo">Período (vários dias)</option>
-                            <option value="horario">Horário Específico</option>
-                        </select>
+                        <label><i class="fa-solid fa-tag"></i> Título *</label>
+                        <input type="text" id="bloqueioTitulo" placeholder="Ex: Fechado para Reforma" required>
                     </div>
-
-                    <div id="camposDia">
+                    <div class="form-row">
                         <div class="form-group">
-                            <label><i class="fa-solid fa-calendar-day"></i> Data</label>
-                            <input type="date" id="dataBloqueio">
-                        </div>
-                    </div>
-
-                    <div id="camposPeriodo" style="display: none;">
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label><i class="fa-solid fa-calendar-start"></i> Data Início</label>
-                                <input type="date" id="dataInicioBloqueio">
-                            </div>
-                            <div class="form-group">
-                                <label><i class="fa-solid fa-calendar-end"></i> Data Fim</label>
-                                <input type="date" id="dataFimBloqueio">
-                            </div>
-                        </div>
-                    </div>
-
-                    <div id="camposHorario" style="display: none;">
-                        <div class="form-group">
-                            <label><i class="fa-solid fa-calendar-day"></i> Data</label>
-                            <input type="date" id="dataHorarioBloqueio">
+                            <label><i class="fa-regular fa-calendar"></i> Data Início *</label>
+                            <input type="date" id="bloqueioDataInicio" required>
                         </div>
                         <div class="form-group">
-                            <label><i class="fa-solid fa-clock"></i> Horários</label>
-                            <div id="horariosMultiplos" class="horarios-checkboxes"></div>
-                            <small
-                                style="color: var(--text-muted); font-size: 0.7rem; display: block; margin-top: 6px;">
-                                Selecione um ou mais horários para bloquear
-                            </small>
-                        </div>
-                        <div class="form-group">
-                            <label><i class="fa-solid fa-user-nurse"></i> Barbeiro (opcional)</label>
-                            <select id="profissionalBloqueio">
-                                <option value="">Todos os barbeiros</option>
-                            </select>
+                            <label><i class="fa-regular fa-calendar"></i> Data Fim *</label>
+                            <input type="date" id="bloqueioDataFim" required>
                         </div>
                     </div>
-
                     <div class="form-group">
-                        <label><i class="fa-solid fa-note-sticky"></i> Motivo (opcional)</label>
-                        <textarea id="motivoBloqueio" rows="2"
-                            placeholder="Ex: Feriado, Manutenção, Fechamento extraordinário..."></textarea>
+                        <label><i class="fa-regular fa-clock"></i> Horários Específicos (opcional)</label>
+                        <div class="horarios-checkboxes" id="bloqueioHorarios">
+                        </div>
+                        <small class="form-text">Selecione horários específicos para bloqueio. Deixe em branco para bloquear o dia todo.</small>
+                    </div>
+                    <div class="form-group">
+                        <label><i class="fa-solid fa-circle-info"></i> Motivo</label>
+                        <textarea id="bloqueioMotivo" rows="3" placeholder="Descreva o motivo do bloqueio..."></textarea>
                     </div>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn-bloqueio btn-bloqueio-secondary"
-                        onclick="closeModal()">Cancelar</button>
-                    <button type="submit" class="btn-bloqueio">Salvar Bloqueio</button>
+                <div class="form-actions">
+                    <button type="button" class="btn-cancel btn-cancel-bloqueio">Cancelar</button>
+                    <button type="submit" class="btn-save">Salvar Bloqueio</button>
                 </div>
             </form>
         </div>
     </div>
 
-    <div id="notificacao" class="notification" style="display:none;">
-        <i class="fa-solid fa-bell"></i>
-        <span></span>
+    <div id="modalExcluirBloqueio" class="modal">
+        <div class="modal-content modal-small">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-trash"></i> Excluir Bloqueio</h3>
+                <button class="modal-close modal-close-excluir-bloqueio">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p>Tem certeza que deseja excluir o bloqueio <strong id="excluirBloqueioTitulo"></strong>?</p>
+                <p class="text-warning">⚠️ Esta ação não poderá ser desfeita.</p>
+            </div>
+            <div class="form-actions">
+                <button class="btn-cancel btn-cancel-excluir-bloqueio">Cancelar</button>
+                <button id="confirmarExcluirBloqueio" class="btn-danger">Excluir</button>
+            </div>
+        </div>
     </div>
 
     <script type="module" src="bloqueios.js"></script>
+    <link rel="stylesheet" href="floating-caixa.css">
+    <script type="module" src="floating-caixa.js"></script>
+
     <script>
-        // Funções globais para o modal
-        function closeModal() {
-            const modal = document.getElementById('modalBloqueio');
-            if (modal) modal.classList.remove('active');
-            const form = document.getElementById('formBloqueio');
-            if (form) form.reset();
-            const bloqueioId = document.getElementById('bloqueioId');
-            if (bloqueioId) bloqueioId.value = '';
-        }
-
-        function openModal() {
-            const modal = document.getElementById('modalBloqueio');
-            if (modal) modal.classList.add('active');
-        }
-
-        // Mobile menu
         (function () {
             const mobileMenuBtn = document.getElementById('mobileMenuBtn');
             const closeSidebarBtn = document.getElementById('closeSidebarBtn');
             const sidebar = document.getElementById('sidebar');
             const overlay = document.getElementById('mobileOverlay');
 
-            if (mobileMenuBtn && sidebar) {
-                function openMenu() {
-                    sidebar.classList.add('mobile-open');
-                    if (overlay) overlay.classList.add('active');
-                    document.body.style.overflow = 'hidden';
-                }
+            if (!mobileMenuBtn || !sidebar) return;
 
-                function closeMenu() {
-                    sidebar.classList.remove('mobile-open');
-                    if (overlay) overlay.classList.remove('active');
-                    document.body.style.overflow = '';
-                }
-
-                mobileMenuBtn.addEventListener('click', openMenu);
-                if (closeSidebarBtn) closeSidebarBtn.addEventListener('click', closeMenu);
-                if (overlay) overlay.addEventListener('click', closeMenu);
-
-                document.querySelectorAll('.sidebar-nav a').forEach(link => {
-                    link.addEventListener('click', closeMenu);
-                });
-
-                window.addEventListener('resize', function () {
-                    if (window.innerWidth > 768) closeMenu();
-                });
+            function openMenu() {
+                sidebar.classList.add('mobile-open');
+                if (overlay) overlay.classList.add('active');
+                document.body.style.overflow = 'hidden';
             }
+
+            function closeMenu() {
+                sidebar.classList.remove('mobile-open');
+                if (overlay) overlay.classList.remove('active');
+                document.body.style.overflow = '';
+            }
+
+            mobileMenuBtn.addEventListener('click', openMenu);
+            if (closeSidebarBtn) closeSidebarBtn.addEventListener('click', closeMenu);
+            if (overlay) overlay.addEventListener('click', closeMenu);
+
+            document.querySelectorAll('.sidebar-nav a').forEach(link => {
+                link.addEventListener('click', closeMenu);
+            });
+
+            window.addEventListener('resize', function () {
+                if (window.innerWidth > 768) closeMenu();
+            });
+
+            const currentPage = window.location.pathname.split('/').pop();
+            document.querySelectorAll('.sidebar-nav .nav-item').forEach(item => {
+                const link = item.querySelector('a');
+                if (link && link.getAttribute('href') === currentPage) {
+                    item.classList.add('active');
+                } else {
+                    item.classList.remove('active');
+                }
+            });
         })();
     </script>
 </body>
