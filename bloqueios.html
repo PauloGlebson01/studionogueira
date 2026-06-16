@@ -121,7 +121,7 @@
             <header class="topbar">
                 <div class="topbar-left">
                     <h1>🔒 Gerenciamento de Bloqueios & Agenda</h1>
-                    <p>Controle de bloqueios de horários e visualização completa da agenda em tempo real</p>
+                    <p>Controle de bloqueios de horários e visualização completa da agenda</p>
                 </div>
                 <div class="topbar-actions">
                 </div>
@@ -134,9 +134,6 @@
                     </button>
                     <button class="tab-btn" data-tab="agenda-visualizacao">
                         <i class="fa-solid fa-calendar-alt"></i> Visualização de Agenda 
-                        <span class="realtime-badge">
-                            <i class="fa-solid fa-circle"></i> Em tempo real
-                        </span>
                     </button>
                 </div>
 
@@ -171,17 +168,27 @@
                     <div class="bloqueios-container">
                         <div class="bloqueios-header">
                             <h2><i class="fa-solid fa-calendar-alt"></i> Visualização de Agendamentos</h2>
-                            <div class="agenda-controls">
-                                <button class="btn-bloqueio" id="btnHoje">
+                        </div>
+
+                        <!-- CONTROLES DA AGENDA - VERSÃO OTIMIZADA -->
+                        <div class="agenda-controls">
+                            <div class="left-controls">
+                                <button class="btn-nav btn-hoje" id="btnHoje">
                                     <i class="fa-solid fa-calendar-day"></i> Hoje
                                 </button>
-                                <button class="btn-bloqueio btn-bloqueio-secondary" id="btnSemanaAnterior">
-                                    <i class="fa-solid fa-chevron-left"></i>
-                                </button>
-                                <span id="periodoLabel" class="periodo-label"></span>
-                                <button class="btn-bloqueio btn-bloqueio-secondary" id="btnProximaSemana">
-                                    <i class="fa-solid fa-chevron-right"></i>
-                                </button>
+                            </div>
+                            <div class="center-controls">
+                                <span id="periodoLabel" class="periodo-label">Carregando...</span>
+                            </div>
+                            <div class="right-controls">
+                                <div class="nav-buttons-group">
+                                    <button class="btn-nav" id="btnSemanaAnterior">
+                                        <i class="fa-solid fa-chevron-left"></i> Anterior
+                                    </button>
+                                    <button class="btn-nav" id="btnProximaSemana">
+                                        Próxima <i class="fa-solid fa-chevron-right"></i>
+                                    </button>
+                                </div>
                                 <select id="tipoVisualizacao" class="tipo-visualizacao">
                                     <option value="semana">📅 Semana</option>
                                     <option value="mes">📆 Mês</option>
@@ -201,6 +208,7 @@
         </main>
     </div>
 
+    <!-- MODAL NOVO BLOQUEIO -->
     <div id="modalBloqueio" class="modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -225,9 +233,8 @@
                     </div>
                     <div class="form-group">
                         <label><i class="fa-regular fa-clock"></i> Horários Específicos (opcional)</label>
-                        <div class="horarios-checkboxes" id="bloqueioHorarios">
-                        </div>
-                        <small class="form-text">Selecione horários específicos para bloqueio. Deixe em branco para bloquear o dia todo.</small>
+                        <div class="horarios-checkboxes" id="bloqueioHorarios"></div>
+                        <small class="form-text"><i class="fa-regular fa-circle-check"></i> Selecione horários específicos para bloqueio. Deixe em branco para bloquear o dia todo.</small>
                     </div>
                     <div class="form-group">
                         <label><i class="fa-solid fa-circle-info"></i> Motivo</label>
@@ -242,6 +249,7 @@
         </div>
     </div>
 
+    <!-- MODAL EXCLUIR BLOQUEIO -->
     <div id="modalExcluirBloqueio" class="modal">
         <div class="modal-content modal-small">
             <div class="modal-header">
