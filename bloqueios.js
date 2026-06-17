@@ -1,6 +1,8 @@
 // bloqueios.js - CORREÇÃO DE DATAS (TIMEZONE LOCAL) - VERSÃO COMPLETA
 // CORREÇÃO: Agendamentos concluídos NUNCA mais ficam disponíveis na visualização
-// CORREÇÃO: Visualização semanal com conteúdo dentro dos limites das células
+// CORREÇÃO: Visualização semanal com TODOS os horários de TODOS os dias
+// CORREÇÃO: Exibição correta de agendamentos em Quinta e Sexta-feira (18/06 e 19/06)
+// CORREÇÃO: Normalização robusta de datas para comparação
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
@@ -56,7 +58,6 @@ const horariosQuintaSabado = [
 ];
 
 // ========== CORREÇÃO: Status que são considerados ATIVOS (ocupam horário) ==========
-// Agora inclui "concluido" para que horários concluídos NUNCA mais apareçam disponíveis
 const STATUS_ATIVOS = ["confirmado", "aguardando_pagamento", "pendente", "concluido"];
 
 const elementosDOM = {
@@ -91,7 +92,7 @@ function mostrarToast(mensagem, tipo = 'sucesso') {
     }, 3000);
 }
 
-// ========== FUNÇÕES DE DATA CORRIGIDAS (TIMEZONE LOCAL) ==========
+// ========== FUNÇÕES DE DATA CORRIGIDAS COM NORMALIZAÇÃO ROBUSTA ==========
 
 /**
  * Converte qualquer formato de data para objeto Date no timezone local
@@ -105,33 +106,6 @@ function converterParaDateLocal(data) {
             return data.toDate();
         }
         
-        // Se for string no formato YYYY-MM-DD
-        if (typeof data === 'string' && data.includes('-')) {
-            const partes = data.split('-');
-            if (partes.length === 3) {
-                // Criar data no timezone local (importante!)
-                return new Date(
-                    parseInt(partes[0], 10),
-                    parseInt(partes[1], 10) - 1,
-                    parseInt(partes[2], 10),
-                    12, 0, 0 // meio-dia para evitar problemas de UTC
-                );
-            }
-        }
-        
-        // Se for string no formato DD/MM/YYYY
-        if (typeof data === 'string' && data.includes('/')) {
-            const partes = data.split('/');
-            if (partes.length === 3) {
-                return new Date(
-                    parseInt(partes[2], 10),
-                    parseInt(partes[1], 10) - 1,
-                    parseInt(partes[0], 10),
-                    12, 0, 0
-                );
-            }
-        }
-        
         // Se for objeto com seconds (Timestamp Firestore)
         if (data.seconds !== undefined) {
             return new Date(data.seconds * 1000);
@@ -140,6 +114,57 @@ function converterParaDateLocal(data) {
         // Se já for Date
         if (data instanceof Date) {
             return data;
+        }
+        
+        // Se for string
+        if (typeof data === 'string') {
+            // Tentar diferentes formatos
+            let dateObj = null;
+            
+            // Formato ISO: 2026-06-18T00:00:00.000Z
+            if (data.includes('T') && data.includes('Z')) {
+                dateObj = new Date(data);
+                if (!isNaN(dateObj.getTime())) return dateObj;
+            }
+            
+            // Formato YYYY-MM-DD
+            if (data.includes('-')) {
+                const partes = data.split('-');
+                if (partes.length === 3) {
+                    // Verificar se tem timezone
+                    if (partes[2].includes('T')) {
+                        const [dia, resto] = partes[2].split('T');
+                        dateObj = new Date(
+                            parseInt(partes[0], 10),
+                            parseInt(partes[1], 10) - 1,
+                            parseInt(dia, 10),
+                            12, 0, 0
+                        );
+                    } else {
+                        dateObj = new Date(
+                            parseInt(partes[0], 10),
+                            parseInt(partes[1], 10) - 1,
+                            parseInt(partes[2], 10),
+                            12, 0, 0
+                        );
+                    }
+                    if (!isNaN(dateObj.getTime())) return dateObj;
+                }
+            }
+            
+            // Formato DD/MM/YYYY
+            if (data.includes('/')) {
+                const partes = data.split('/');
+                if (partes.length === 3) {
+                    dateObj = new Date(
+                        parseInt(partes[2], 10),
+                        parseInt(partes[1], 10) - 1,
+                        parseInt(partes[0], 10),
+                        12, 0, 0
+                    );
+                    if (!isNaN(dateObj.getTime())) return dateObj;
+                }
+            }
         }
         
         return null;
@@ -165,8 +190,45 @@ function formatarData(data) {
 
 /**
  * Formata data para comparação (YYYY-MM-DD) - USO LOCAL
+ * CORREÇÃO: Normaliza qualquer formato de data para YYYY-MM-DD
  */
 function formatarDataComparacao(data) {
+    if (!data) return '';
+    
+    // Se for string, tentar normalizar diretamente
+    if (typeof data === 'string') {
+        // Já está no formato YYYY-MM-DD
+        if (data.match(/^\d{4}-\d{2}-\d{2}$/)) {
+            return data;
+        }
+        
+        // Formato ISO com T
+        if (data.includes('T')) {
+            const parteData = data.split('T')[0];
+            if (parteData.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                return parteData;
+            }
+        }
+        
+        // Formato DD/MM/YYYY
+        if (data.includes('/')) {
+            const partes = data.split('/');
+            if (partes.length === 3) {
+                const dia = String(parseInt(partes[0], 10)).padStart(2, '0');
+                const mes = String(parseInt(partes[1], 10)).padStart(2, '0');
+                const ano = String(parseInt(partes[2], 10)).padStart(4, '0');
+                return `${ano}-${mes}-${dia}`;
+            }
+        }
+        
+        // Tentar extrair data com regex
+        const match = data.match(/(\d{4})-(\d{2})-(\d{2})/);
+        if (match) {
+            return `${match[1]}-${match[2]}-${match[3]}`;
+        }
+    }
+    
+    // Usar o conversor para Date
     const dataObj = converterParaDateLocal(data);
     if (!dataObj || isNaN(dataObj.getTime())) return '';
     
@@ -183,17 +245,25 @@ function formatarDataComparacao(data) {
 function getDiaSemana(dataStr) {
     if (!dataStr) return null;
     
-    const partes = dataStr.split('-');
-    if (partes.length !== 3) return null;
+    // Tentar extrair do formato YYYY-MM-DD
+    const match = dataStr.match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (match) {
+        const data = new Date(
+            parseInt(match[1], 10),
+            parseInt(match[2], 10) - 1,
+            parseInt(match[3], 10),
+            12, 0, 0
+        );
+        return data.getDay();
+    }
     
-    const data = new Date(
-        parseInt(partes[0], 10),
-        parseInt(partes[1], 10) - 1,
-        parseInt(partes[2], 10),
-        12, 0, 0
-    );
+    // Tentar converter via Date
+    const dataObj = converterParaDateLocal(dataStr);
+    if (dataObj && !isNaN(dataObj.getTime())) {
+        return dataObj.getDay();
+    }
     
-    return data.getDay();
+    return null;
 }
 
 function getNomeDiaSemanaCompleto(data) {
@@ -212,13 +282,20 @@ function getNomeDiaSemanaAbreviado(data) {
 function getHorariosPorDia(dataStr) {
     const diaSemana = getDiaSemana(dataStr);
     
+    if (diaSemana === null) {
+        return { horarios: [], temAtendimento: false, descricao: "Data inválida" };
+    }
+    
+    // Domingo - Fechado
     if (diaSemana === 0) {
         return { horarios: [], temAtendimento: false, descricao: "Domingo - Fechado" };
     }
     
+    // Segunda a Quarta (1, 2, 3)
     if (diaSemana >= 1 && diaSemana <= 3) {
         return { horarios: [...horariosSegundaQuarta], temAtendimento: true, descricao: "Segunda à Quarta" };
     }
+    // Quinta a Sábado (4, 5, 6)
     else if (diaSemana >= 4 && diaSemana <= 6) {
         return { horarios: [...horariosQuintaSabado], temAtendimento: true, descricao: "Quinta à Sábado" };
     }
@@ -283,6 +360,7 @@ function carregarBloqueios() {
     });
 }
 
+// ========== FUNÇÃO CORRIGIDA: carregarAgendamentosEmTempoReal ==========
 function carregarAgendamentosEmTempoReal() {
     console.log("🔄 Iniciando listener em tempo real para agendamentos...");
     
@@ -295,26 +373,45 @@ function carregarAgendamentosEmTempoReal() {
             snapshot.forEach(doc => {
                 const firestoreData = doc.data();
                 
-                // CORREÇÃO: Extrair data corretamente
+                // EXTRAIR DATA DE QUALQUER FORMATO
                 let dataAgendamento = null;
                 let dataString = null;
                 
-                // Tentar extrair data de diferentes campos
-                if (firestoreData.data) {
-                    dataAgendamento = converterParaDateLocal(firestoreData.data);
-                } else if (firestoreData.dataAgendamento) {
-                    dataAgendamento = converterParaDateLocal(firestoreData.dataAgendamento);
+                // Tentar diferentes campos de data
+                const camposData = ['data', 'dataAgendamento', 'data_atendimento', 'date', 'agendamentoData'];
+                for (const campo of camposData) {
+                    if (firestoreData[campo]) {
+                        const tempData = converterParaDateLocal(firestoreData[campo]);
+                        if (tempData && !isNaN(tempData.getTime())) {
+                            dataAgendamento = tempData;
+                            break;
+                        }
+                    }
                 }
                 
+                // Se não encontrou data, tentar string direta
+                if (!dataAgendamento) {
+                    for (const campo of camposData) {
+                        if (typeof firestoreData[campo] === 'string') {
+                            const tempData = converterParaDateLocal(firestoreData[campo]);
+                            if (tempData && !isNaN(tempData.getTime())) {
+                                dataAgendamento = tempData;
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                // Gerar dataString no formato YYYY-MM-DD
                 if (dataAgendamento && !isNaN(dataAgendamento.getTime())) {
                     dataString = formatarDataComparacao(dataAgendamento);
                 } else if (typeof firestoreData.data === 'string') {
-                    // Se a data for string, converter diretamente
-                    dataString = firestoreData.data.split('T')[0];
+                    dataString = formatarDataComparacao(firestoreData.data);
+                } else if (typeof firestoreData.dataAgendamento === 'string') {
+                    dataString = formatarDataComparacao(firestoreData.dataAgendamento);
                 }
                 
-                // ========== CORREÇÃO: Verifica se o status está na lista de ATIVOS ==========
-                // Agora "concluido" também é considerado ativo (ocupa horário)
+                // Verificar se o status está na lista de ATIVOS
                 const statusAtivo = STATUS_ATIVOS.includes(firestoreData.status);
                 
                 let clienteNome = firestoreData.clienteNome || firestoreData.nome || firestoreData.cliente || 'Cliente';
@@ -341,8 +438,8 @@ function carregarAgendamentosEmTempoReal() {
             });
             
             console.log(`📊 Total de agendamentos carregados: ${agendamentos.length}`);
-            console.log(`📋 Status considerados ATIVOS (ocupam horário): ${STATUS_ATIVOS.join(', ')}`);
-            console.log(`📊 Agendamentos ativos (ocupam horário): ${agendamentos.filter(a => a.statusAtivo).length}`);
+            console.log(`📋 Status considerados ATIVOS: ${STATUS_ATIVOS.join(', ')}`);
+            console.log(`📊 Agendamentos ativos: ${agendamentos.filter(a => a.statusAtivo).length}`);
             
             const tabAgenda = document.getElementById('tab-agenda-visualizacao');
             if (tabAgenda && tabAgenda.classList.contains('active')) {
@@ -474,6 +571,7 @@ function renderizarAgenda() {
     }
 }
 
+// ========== FUNÇÃO CORRIGIDA: renderizarSemana com TODOS os horários ==========
 function renderizarSemana() {
     const inicioSemana = obterInicioSemana(currentDate);
     
@@ -489,11 +587,11 @@ function renderizarSemana() {
     const diasString = dias.map(dia => formatarDataComparacao(dia));
     console.log("📅 Dias da semana:", diasString);
     
-    // ========== CORREÇÃO: Filtrar apenas agendamentos ATIVOS (incluindo concluídos) ==========
+    // Filtrar apenas agendamentos ATIVOS (incluindo concluídos)
     const agendamentosAtivos = agendamentos.filter(a => a.statusAtivo === true);
     console.log(`📊 Agendamentos ativos (ocupam horário): ${agendamentosAtivos.length}`);
     
-    // CORREÇÃO: Filtrar agendamentos da semana
+    // Filtrar agendamentos da semana
     const agendamentosSemana = agendamentosAtivos.filter(a => {
         const dataAgendamentoStr = a.dataString;
         if (!dataAgendamentoStr) return false;
@@ -501,14 +599,56 @@ function renderizarSemana() {
     });
     
     console.log(`📊 Agendamentos na semana: ${agendamentosSemana.length}`);
-    agendamentosSemana.forEach(a => {
-        console.log(`   - ${a.clienteNome}: ${a.dataString} ${a.horario} (${a.status})`);
+    
+    // LOG DETALHADO para depuração
+    diasString.forEach(diaStr => {
+        const count = agendamentosSemana.filter(a => a.dataString === diaStr).length;
+        const diaSemana = getDiaSemana(diaStr);
+        const nomeDia = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab'][diaSemana] || 'Inválido';
+        console.log(`   📌 ${diaStr} (${nomeDia}): ${count} agendamentos`);
+        
+        agendamentosSemana.filter(a => a.dataString === diaStr).forEach(a => {
+            console.log(`      - ${a.clienteNome}: ${a.horario} (${a.status})`);
+        });
     });
     
     const agendamentosPorDia = {};
     diasString.forEach(diaStr => {
         agendamentosPorDia[diaStr] = agendamentosSemana.filter(a => a.dataString === diaStr);
     });
+    
+    // ========== CORREÇÃO PRINCIPAL: Coletar TODOS os horários únicos da semana ==========
+    const todosHorariosSet = new Set();
+    
+    for (let idx = 0; idx < dias.length; idx++) {
+        const diaStr = diasString[idx];
+        const horariosInfo = getHorariosPorDia(diaStr);
+        if (horariosInfo.temAtendimento) {
+            horariosInfo.horarios.forEach(h => todosHorariosSet.add(h));
+        }
+    }
+    
+    // Converter para array e ordenar
+    let horariosParaExibir = Array.from(todosHorariosSet);
+    horariosParaExibir.sort((a, b) => {
+        const [hA, mA] = a.split(':').map(Number);
+        const [hB, mB] = b.split(':').map(Number);
+        return hA !== hB ? hA - hB : mA - mB;
+    });
+    
+    // Se não houver horários, usar os padrões
+    if (horariosParaExibir.length === 0) {
+        horariosParaExibir = [...horariosSegundaQuarta, ...horariosQuintaSabado];
+        horariosParaExibir = [...new Set(horariosParaExibir)];
+        horariosParaExibir.sort((a, b) => {
+            const [hA, mA] = a.split(':').map(Number);
+            const [hB, mB] = b.split(':').map(Number);
+            return hA !== hB ? hA - hB : mA - mB;
+        });
+    }
+    
+    console.log(`📋 TODOS os horários a serem exibidos (${horariosParaExibir.length}):`);
+    console.log(`   ${horariosParaExibir.join(', ')}`);
     
     let html = '<div class="agenda-wrapper"><div class="agenda-semana">';
     html += '<div class="agenda-cabecalho">';
@@ -520,23 +660,19 @@ function renderizarSemana() {
         const horariosInfo = getHorariosPorDia(diaStr);
         const temAtendimento = horariosInfo.temAtendimento;
         
+        const hojeStr = formatarDataComparacao(new Date());
+        const isHoje = diaStr === hojeStr;
+        
         html += `
-            <div class="agenda-dia-coluna ${!temAtendimento ? 'dia-fechado' : ''}">
+            <div class="agenda-dia-coluna ${!temAtendimento ? 'dia-fechado' : ''} ${isHoje ? 'hoje' : ''}">
                 <div class="dia-nome">${getNomeDiaSemanaAbreviado(dia)}</div>
                 <div class="dia-data">${formatarData(dia)}</div>
                 ${!temAtendimento ? '<div class="dia-fechado-label">🔒 FECHADO</div>' : ''}
+                ${isHoje ? '<div class="dia-hoje-label">📌 HOJE</div>' : ''}
             </div>
         `;
     }
     html += '</div><div class="agenda-corpo">';
-    
-    let horariosParaExibir = [...horariosSegundaQuarta];
-    const primeiroDiaUtil = dias.find((_, idx) => getHorariosPorDia(diasString[idx]).temAtendimento);
-    
-    if (primeiroDiaUtil) {
-        const idx = dias.indexOf(primeiroDiaUtil);
-        horariosParaExibir = [...getHorariosPorDia(diasString[idx]).horarios];
-    }
     
     for (const horario of horariosParaExibir) {
         html += `<div class="agenda-linha"><div class="agenda-hora">${horario}</div>`;
@@ -547,10 +683,18 @@ function renderizarSemana() {
             const temAtendimento = horariosInfo.temAtendimento;
             
             if (!temAtendimento) {
-                html += `<div class="agenda-celula dia-fechado-celula"><div class="sem-atendimento">❌ Sem atendimento</div></div>`;
+                html += `<div class="agenda-celula dia-fechado-celula"><div class="sem-atendimento">❌</div></div>`;
                 continue;
             }
             
+            // Verificar se este horário existe neste dia
+            const horariosDia = horariosInfo.horarios;
+            if (!horariosDia.includes(horario)) {
+                html += `<div class="agenda-celula dia-fechado-celula"><div class="sem-atendimento">⏭️</div></div>`;
+                continue;
+            }
+            
+            // Verificar bloqueios
             const bloqueiosDia = bloqueios.filter(b => {
                 const dataInicio = formatarDataComparacao(b.dataInicio);
                 const dataFim = formatarDataComparacao(b.dataFim);
@@ -568,7 +712,7 @@ function renderizarSemana() {
             const estaBloqueado = temBloqueioDiaInteiro || horariosBloqueados.has(horario);
             
             if (estaBloqueado) {
-                html += `<div class="agenda-celula dia-fechado-celula"><div class="sem-atendimento">🔒 Bloqueado</div></div>`;
+                html += `<div class="agenda-celula dia-fechado-celula"><div class="sem-atendimento">🔒</div></div>`;
                 continue;
             }
             
@@ -577,7 +721,6 @@ function renderizarSemana() {
             html += `<div class="agenda-celula">`;
             if (agendamentosHora.length > 0) {
                 for (const a of agendamentosHora) {
-                    // Preparar dados para exibição com truncamento
                     const clienteDisplay = a.clienteNome.length > 15 ? a.clienteNome.substring(0, 15) + '...' : a.clienteNome;
                     const servicoDisplay = a.servicoNome.length > 12 ? a.servicoNome.substring(0, 12) + '...' : a.servicoNome;
                     const profissionalDisplay = (a.profissionalNome || getProfissionalNome(a.profissionalId)).length > 10 ? 
@@ -607,6 +750,30 @@ function renderizarSemana() {
     
     html += '</div></div></div>';
     elementosDOM.agendaVisualizacao.innerHTML = html;
+    
+    // Adicionar estilo para dia "hoje"
+    const styleExists = document.getElementById('agenda-hoje-style');
+    if (!styleExists) {
+        const style = document.createElement('style');
+        style.id = 'agenda-hoje-style';
+        style.textContent = `
+            .dia-hoje-label {
+                font-size: 0.5rem;
+                color: #10b981;
+                font-weight: 700;
+                margin-top: 2px;
+                background: rgba(16, 185, 129, 0.15);
+                padding: 1px 6px;
+                border-radius: 10px;
+                display: inline-block;
+            }
+            .agenda-dia-coluna.hoje {
+                background: rgba(33, 153, 239, 0.08);
+                border-radius: 8px;
+            }
+        `;
+        document.head.appendChild(style);
+    }
 }
 
 function renderizarMes() {
@@ -619,7 +786,7 @@ function renderizarMes() {
     
     elementosDOM.periodoLabel.textContent = `${formatarData(primeiroDia)} - ${formatarData(ultimoDia)}`;
     
-    // ========== CORREÇÃO: Filtrar apenas agendamentos ATIVOS (incluindo concluídos) ==========
+    // Filtrar apenas agendamentos ATIVOS (incluindo concluídos)
     const agendamentosAtivos = agendamentos.filter(a => a.statusAtivo === true);
     
     const agendamentosPorData = {};
@@ -698,7 +865,6 @@ function renderizarDia() {
         return;
     }
     
-    // ========== CORREÇÃO: Filtrar apenas agendamentos ATIVOS (incluindo concluídos) ==========
     const agendamentosAtivos = agendamentos.filter(a => a.statusAtivo === true);
     const agendamentosDia = agendamentosAtivos.filter(a => a.dataString === dataStr);
     agendamentosDia.sort((a, b) => (a.horario || '').localeCompare(b.horario || ''));
@@ -776,7 +942,6 @@ function abrirModalNovoBloqueio() {
     if (elementosDOM.modalTitle) elementosDOM.modalTitle.innerHTML = '<i class="fa-solid fa-plus"></i> Novo Bloqueio';
     if (elementosDOM.formBloqueio) elementosDOM.formBloqueio.reset();
     
-    // ========== CORREÇÃO: Usar data local para o input date ==========
     const hoje = new Date();
     const ano = hoje.getFullYear();
     const mes = String(hoje.getMonth() + 1).padStart(2, '0');
@@ -812,18 +977,12 @@ async function salvarBloqueio(event) {
         return;
     }
     
-    // ========== CORREÇÃO: Criar datas no timezone LOCAL ==========
-    // Em vez de usar new Date(dataInicioStr) que cria em UTC,
-    // vamos criar a data manualmente no fuso horário local
-    
     const [anoInicio, mesInicio, diaInicio] = dataInicioStr.split('-').map(Number);
     const [anoFim, mesFim, diaFim] = dataFimStr.split('-').map(Number);
     
-    // Criar data com horário local (meio-dia para evitar problemas de UTC)
     const dataInicio = new Date(anoInicio, mesInicio - 1, diaInicio, 12, 0, 0);
     const dataFim = new Date(anoFim, mesFim - 1, diaFim, 23, 59, 59);
     
-    // Validação: dataInicio não pode ser maior que dataFim
     if (dataInicio > dataFim) {
         mostrarToast("Data de início não pode ser maior que data de fim", "erro");
         return;
@@ -958,6 +1117,14 @@ async function inicializar() {
     carregarProfissionaisEmTempoReal();
     carregarAgendamentosEmTempoReal();
     initTabs();
+    
+    // Forçar renderização após 2 segundos para garantir que os dados foram carregados
+    setTimeout(() => {
+        const tabAgenda = document.getElementById('tab-agenda-visualizacao');
+        if (tabAgenda && tabAgenda.classList.contains('active')) {
+            renderizarAgenda();
+        }
+    }, 2000);
 }
 
 inicializar();
