@@ -1,5 +1,6 @@
 // agendamento.js - Versão CORRIGIDA com VERIFICAÇÃO DE BLOQUEIOS OTIMIZADA
 // E FILTRO DE HORÁRIOS QUE IGNORA STATUS AUSENTE/CANCELADO
+// CORREÇÃO: Agendamentos concluídos NUNCA mais ficam disponíveis
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { 
@@ -1292,11 +1293,13 @@ async function atualizarHorarios() {
         
         const snapshot = await getDocs(q);
         
-        // Status que ocupam horário (confirmado ou pendente)
-        const statusOcupados = ["confirmado", "pendente", "aguardando_pagamento"];
+        // ========== CORREÇÃO: Status que ocupam horário (INCLUINDO CONCLUIDO) ==========
+        // Agora agendamentos concluídos NUNCA mais liberam o horário
+        const statusOcupados = ["confirmado", "pendente", "aguardando_pagamento", "concluido"];
         const horariosOcupados = [];
         
         console.log(`📊 TOTAL de agendamentos encontrados: ${snapshot.size}`);
+        console.log(`📋 Status considerados OCUPADOS: ${statusOcupados.join(', ')}`);
         
         snapshot.forEach(doc => {
             const agendamento = doc.data();
@@ -1514,7 +1517,7 @@ if (form) {
                 where("data", "==", data), 
                 where("horario", "==", horario),
                 where("profissionalId", "==", profissionalId),
-                where("status", "in", ["confirmado", "pendente", "aguardando_pagamento"])
+                where("status", "in", ["confirmado", "pendente", "aguardando_pagamento", "concluido"])
             );
             const existingSnap = await getDocs(q);
             
@@ -1786,3 +1789,4 @@ console.log("📋 Horários Quinta à Sábado:", horariosQuintaSabado);
 console.log("🔒 Sistema de bloqueios integrado!");
 console.log("👨‍👦 MODAL para seleção de múltiplos clientes com mesmo telefone!");
 console.log("✅ FILTRO DE HORÁRIOS: Ignora agendamentos com status ausente/cancelado!");
+console.log("🔒 CORREÇÃO: Agendamentos concluídos NUNCA mais ficam disponíveis!");

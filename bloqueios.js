@@ -1,4 +1,5 @@
 // bloqueios.js - CORREÇÃO DE DATAS (TIMEZONE LOCAL) - VERSÃO COMPLETA
+// CORREÇÃO: Agendamentos concluídos NUNCA mais ficam disponíveis na visualização
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
@@ -53,7 +54,9 @@ const horariosQuintaSabado = [
     "14:00", "14:40", "15:20", "16:00", "17:20", "18:00", "18:40"
 ];
 
-const STATUS_ATIVOS = ["confirmado", "aguardando_pagamento", "pendente"];
+// ========== CORREÇÃO: Status que são considerados ATIVOS (ocupam horário) ==========
+// Agora inclui "concluido" para que horários concluídos NUNCA mais apareçam disponíveis
+const STATUS_ATIVOS = ["confirmado", "aguardando_pagamento", "pendente", "concluido"];
 
 const elementosDOM = {
     bloqueiosList: document.getElementById('bloqueiosList'),
@@ -309,6 +312,8 @@ function carregarAgendamentosEmTempoReal() {
                     dataString = firestoreData.data.split('T')[0];
                 }
                 
+                // ========== CORREÇÃO: Verifica se o status está na lista de ATIVOS ==========
+                // Agora "concluido" também é considerado ativo (ocupa horário)
                 const statusAtivo = STATUS_ATIVOS.includes(firestoreData.status);
                 
                 let clienteNome = firestoreData.clienteNome || firestoreData.nome || firestoreData.cliente || 'Cliente';
@@ -335,10 +340,8 @@ function carregarAgendamentosEmTempoReal() {
             });
             
             console.log(`📊 Total de agendamentos carregados: ${agendamentos.length}`);
-            console.log(`📊 Datas dos agendamentos para debug:`);
-            agendamentos.forEach(a => {
-                console.log(`   - ${a.clienteNome}: dataString="${a.dataString}", status=${a.status}`);
-            });
+            console.log(`📋 Status considerados ATIVOS (ocupam horário): ${STATUS_ATIVOS.join(', ')}`);
+            console.log(`📊 Agendamentos ativos (ocupam horário): ${agendamentos.filter(a => a.statusAtivo).length}`);
             
             const tabAgenda = document.getElementById('tab-agenda-visualizacao');
             if (tabAgenda && tabAgenda.classList.contains('active')) {
@@ -469,8 +472,9 @@ function renderizarSemana() {
     const diasString = dias.map(dia => formatarDataComparacao(dia));
     console.log("📅 Dias da semana:", diasString);
     
-    // Filtrar apenas agendamentos ATIVOS
+    // ========== CORREÇÃO: Filtrar apenas agendamentos ATIVOS (incluindo concluídos) ==========
     const agendamentosAtivos = agendamentos.filter(a => a.statusAtivo === true);
+    console.log(`📊 Agendamentos ativos (ocupam horário): ${agendamentosAtivos.length}`);
     
     // CORREÇÃO: Filtrar agendamentos da semana
     const agendamentosSemana = agendamentosAtivos.filter(a => {
@@ -481,7 +485,7 @@ function renderizarSemana() {
     
     console.log(`📊 Agendamentos na semana: ${agendamentosSemana.length}`);
     agendamentosSemana.forEach(a => {
-        console.log(`   - ${a.clienteNome}: ${a.dataString} ${a.horario}`);
+        console.log(`   - ${a.clienteNome}: ${a.dataString} ${a.horario} (${a.status})`);
     });
     
     const agendamentosPorDia = {};
@@ -561,6 +565,7 @@ function renderizarSemana() {
                             <div class="agendamento-cliente" title="${escapeHtml(a.clienteNome)}">${escapeHtml(a.clienteNome.length > 20 ? a.clienteNome.substring(0, 20) + '...' : a.clienteNome)}</div>
                             <div class="agendamento-servico">${escapeHtml(a.servicoNome.length > 15 ? a.servicoNome.substring(0, 15) + '...' : a.servicoNome)}</div>
                             <div class="agendamento-profissional">${escapeHtml(a.profissionalNome || getProfissionalNome(a.profissionalId))}</div>
+                            <div class="agendamento-status-tag">${escapeHtml(a.status)}</div>
                         </div>
                     `;
                 }
@@ -586,6 +591,7 @@ function renderizarMes() {
     
     elementosDOM.periodoLabel.textContent = `${formatarData(primeiroDia)} - ${formatarData(ultimoDia)}`;
     
+    // ========== CORREÇÃO: Filtrar apenas agendamentos ATIVOS (incluindo concluídos) ==========
     const agendamentosAtivos = agendamentos.filter(a => a.statusAtivo === true);
     
     const agendamentosPorData = {};
@@ -630,7 +636,7 @@ function renderizarMes() {
             } else {
                 gridHTML += `<div class="mes-agendamentos">`;
                 for (const a of agendamentosDia.slice(0, 3)) {
-                    gridHTML += `<div class="mes-agendamento-item" onclick="event.stopPropagation(); verDetalhesAgendamento('${a.id}')" title="${escapeHtml(a.clienteNome)} - ${escapeHtml(a.horario)}">
+                    gridHTML += `<div class="mes-agendamento-item" onclick="event.stopPropagation(); verDetalhesAgendamento('${a.id}')" title="${escapeHtml(a.clienteNome)} - ${escapeHtml(a.horario)} (${a.status})">
                         ${escapeHtml(a.horario)} - ${escapeHtml(a.clienteNome.length > 15 ? a.clienteNome.substring(0, 15) + '...' : a.clienteNome)}
                     </div>`;
                 }
@@ -663,6 +669,7 @@ function renderizarDia() {
         return;
     }
     
+    // ========== CORREÇÃO: Filtrar apenas agendamentos ATIVOS (incluindo concluídos) ==========
     const agendamentosAtivos = agendamentos.filter(a => a.statusAtivo === true);
     const agendamentosDia = agendamentosAtivos.filter(a => a.dataString === dataStr);
     agendamentosDia.sort((a, b) => (a.horario || '').localeCompare(b.horario || ''));
@@ -684,6 +691,7 @@ function renderizarDia() {
                             <div class="agendamento-info">
                                 <span class="agendamento-servico-tag">✂️ ${escapeHtml(a.servicoNome)}</span>
                                 <span class="agendamento-profissional-tag"><i class="fa-solid fa-user-md"></i> ${escapeHtml(a.profissionalNome || getProfissionalNome(a.profissionalId))}</span>
+                                <span class="agendamento-status-tag">${escapeHtml(a.status)}</span>
                             </div>
                         </div>
                         <div class="agendamento-valor">${a.valor ? formatarMoeda(a.valor) : ''}</div>
@@ -697,7 +705,7 @@ function renderizarDia() {
 window.verDetalhesAgendamento = function(id) {
     const agendamento = agendamentos.find(a => a.id === id);
     if (agendamento) {
-        mostrarToast(`📋 ${agendamento.clienteNome} - ${agendamento.horario}`, 'sucesso');
+        mostrarToast(`📋 ${agendamento.clienteNome} - ${agendamento.horario} (${agendamento.status})`, 'sucesso');
     }
 };
 
@@ -911,6 +919,7 @@ window.addEventListener('click', (e) => {
 
 async function inicializar() {
     console.log("🔄 Inicializando sistema de bloqueios...");
+    console.log(`📋 Status considerados ATIVOS (ocupam horário): ${STATUS_ATIVOS.join(', ')}`);
     gerarHorariosCheckboxes();
     await carregarProfissionais();
     carregarBloqueios();
