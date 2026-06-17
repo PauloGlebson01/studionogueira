@@ -1,5 +1,6 @@
 // bloqueios.js - CORREÇÃO DE DATAS (TIMEZONE LOCAL) - VERSÃO COMPLETA
 // CORREÇÃO: Agendamentos concluídos NUNCA mais ficam disponíveis na visualização
+// CORREÇÃO: Visualização semanal com conteúdo dentro dos limites das células
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
@@ -372,6 +373,22 @@ function carregarProfissionaisEmTempoReal() {
     });
 }
 
+// ========== FUNÇÃO PARA ABREVIAR STATUS ==========
+function abreviarStatus(status) {
+    if (!status) return '⏳ Pend.';
+    
+    const statusMap = {
+        'aguardando_pagamento': '⚠️ Pagto',
+        'aguardendo_pagamento': '⚠️ Pagto',
+        'confirmado': '✅ Conf.',
+        'concluido': '✓ Concl.',
+        'pendente': '⏳ Pend.',
+        'cancelado': '✖ Cancel.'
+    };
+    
+    return statusMap[status] || status;
+}
+
 // ========== RENDERIZAÇÃO DOS BLOQUEIOS ==========
 
 function renderizarBloqueios() {
@@ -560,12 +577,23 @@ function renderizarSemana() {
             html += `<div class="agenda-celula">`;
             if (agendamentosHora.length > 0) {
                 for (const a of agendamentosHora) {
+                    // Preparar dados para exibição com truncamento
+                    const clienteDisplay = a.clienteNome.length > 15 ? a.clienteNome.substring(0, 15) + '...' : a.clienteNome;
+                    const servicoDisplay = a.servicoNome.length > 12 ? a.servicoNome.substring(0, 12) + '...' : a.servicoNome;
+                    const profissionalDisplay = (a.profissionalNome || getProfissionalNome(a.profissionalId)).length > 10 ? 
+                        (a.profissionalNome || getProfissionalNome(a.profissionalId)).substring(0, 10) + '...' : 
+                        (a.profissionalNome || getProfissionalNome(a.profissionalId));
+                    const statusAbreviado = abreviarStatus(a.status);
+                    const tooltipText = `${a.clienteNome} - ${a.horario} - ${a.servicoNome} - ${a.status}`;
+                    
                     html += `
-                        <div class="agendamento-card" onclick="verDetalhesAgendamento('${a.id}')">
-                            <div class="agendamento-cliente" title="${escapeHtml(a.clienteNome)}">${escapeHtml(a.clienteNome.length > 20 ? a.clienteNome.substring(0, 20) + '...' : a.clienteNome)}</div>
-                            <div class="agendamento-servico">${escapeHtml(a.servicoNome.length > 15 ? a.servicoNome.substring(0, 15) + '...' : a.servicoNome)}</div>
-                            <div class="agendamento-profissional">${escapeHtml(a.profissionalNome || getProfissionalNome(a.profissionalId))}</div>
-                            <div class="agendamento-status-tag">${escapeHtml(a.status)}</div>
+                        <div class="agendamento-card" onclick="verDetalhesAgendamento('${a.id}')" title="${escapeHtml(tooltipText)}">
+                            <div class="agendamento-cliente" title="${escapeHtml(a.clienteNome)}">${escapeHtml(clienteDisplay)}</div>
+                            <div class="agendamento-servico" title="${escapeHtml(a.servicoNome)}">${escapeHtml(servicoDisplay)}</div>
+                            <div class="agendamento-profissional" title="${escapeHtml(a.profissionalNome || getProfissionalNome(a.profissionalId))}">${escapeHtml(profissionalDisplay)}</div>
+                            <div class="agendamento-status-tag" data-status="${escapeHtml(a.status || 'confirmado')}">
+                                ${escapeHtml(statusAbreviado)}
+                            </div>
                         </div>
                     `;
                 }
@@ -636,8 +664,9 @@ function renderizarMes() {
             } else {
                 gridHTML += `<div class="mes-agendamentos">`;
                 for (const a of agendamentosDia.slice(0, 3)) {
+                    const statusAbreviado = abreviarStatus(a.status);
                     gridHTML += `<div class="mes-agendamento-item" onclick="event.stopPropagation(); verDetalhesAgendamento('${a.id}')" title="${escapeHtml(a.clienteNome)} - ${escapeHtml(a.horario)} (${a.status})">
-                        ${escapeHtml(a.horario)} - ${escapeHtml(a.clienteNome.length > 15 ? a.clienteNome.substring(0, 15) + '...' : a.clienteNome)}
+                        ${escapeHtml(a.horario)} - ${escapeHtml(a.clienteNome.length > 15 ? a.clienteNome.substring(0, 15) + '...' : a.clienteNome)} ${escapeHtml(statusAbreviado)}
                     </div>`;
                 }
                 if (agendamentosDia.length > 3) {
@@ -683,20 +712,23 @@ function renderizarDia() {
         <div class="agenda-dia">
             <div class="dia-resumo"><div class="resumo-info"><i class="fa-solid fa-calendar-check"></i><span>${agendamentosDia.length} agendamento(s)</span></div></div>
             <div class="dia-agendamentos">
-                ${agendamentosDia.map(a => `
-                    <div class="agendamento-detalhado" onclick="verDetalhesAgendamento('${a.id}')">
-                        <div class="agendamento-hora"><i class="fa-regular fa-clock"></i> ${escapeHtml(a.horario || 'Horário não definido')}</div>
-                        <div class="agendamento-conteudo">
-                            <div class="agendamento-cliente-nome"><strong>${escapeHtml(a.clienteNome)}</strong></div>
-                            <div class="agendamento-info">
-                                <span class="agendamento-servico-tag">✂️ ${escapeHtml(a.servicoNome)}</span>
-                                <span class="agendamento-profissional-tag"><i class="fa-solid fa-user-md"></i> ${escapeHtml(a.profissionalNome || getProfissionalNome(a.profissionalId))}</span>
-                                <span class="agendamento-status-tag">${escapeHtml(a.status)}</span>
+                ${agendamentosDia.map(a => {
+                    const statusAbreviado = abreviarStatus(a.status);
+                    return `
+                        <div class="agendamento-detalhado" onclick="verDetalhesAgendamento('${a.id}')">
+                            <div class="agendamento-hora"><i class="fa-regular fa-clock"></i> ${escapeHtml(a.horario || 'Horário não definido')}</div>
+                            <div class="agendamento-conteudo">
+                                <div class="agendamento-cliente-nome"><strong>${escapeHtml(a.clienteNome)}</strong></div>
+                                <div class="agendamento-info">
+                                    <span class="agendamento-servico-tag">✂️ ${escapeHtml(a.servicoNome)}</span>
+                                    <span class="agendamento-profissional-tag"><i class="fa-solid fa-user-md"></i> ${escapeHtml(a.profissionalNome || getProfissionalNome(a.profissionalId))}</span>
+                                    <span class="agendamento-status-tag" data-status="${escapeHtml(a.status || 'confirmado')}">${escapeHtml(statusAbreviado)}</span>
+                                </div>
                             </div>
+                            <div class="agendamento-valor">${a.valor ? formatarMoeda(a.valor) : ''}</div>
                         </div>
-                        <div class="agendamento-valor">${a.valor ? formatarMoeda(a.valor) : ''}</div>
-                    </div>
-                `).join('')}
+                    `;
+                }).join('')}
             </div>
         </div>
     `;

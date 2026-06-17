@@ -1640,3 +1640,256 @@ textarea {
     min-width: 120px;
     flex-shrink: 0;
 }
+
+/* ==================== CORREÇÃO: CÉLULAS DA AGENDA SEMANAL ==================== */
+
+/* Garantir que as células tenham tamanho fixo e não estourem */
+.agenda-celula {
+    width: 120px;
+    min-width: 120px;
+    max-width: 120px;
+    padding: 6px 6px;
+    border-right: 1px solid var(--border-color);
+    background: var(--bg-card);
+    overflow: hidden; /* IMPEDE QUE O CONTEÚDO SAIA DA CÉLULA */
+    position: relative;
+}
+
+/* Ajustar os cards dentro das células */
+.agendamento-card {
+    background: linear-gradient(135deg, rgba(33, 153, 239, 0.1), rgba(33, 153, 239, 0.05));
+    border-left: 3px solid var(--primary);
+    border-radius: 6px;
+    padding: 5px 6px;
+    margin-bottom: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+    overflow: hidden; /* IMPEDE QUE O CONTEÚDO SAIA DO CARD */
+    word-wrap: break-word;
+    max-width: 100%;
+}
+
+.agendamento-card:last-child {
+    margin-bottom: 0;
+}
+
+.agendamento-card:hover {
+    transform: translateX(2px);
+    background: rgba(33, 153, 239, 0.2);
+}
+
+/* Cliente - com truncamento */
+.agendamento-cliente {
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: var(--text-main);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+    display: block;
+}
+
+/* Serviço - com truncamento */
+.agendamento-servico {
+    font-size: 0.55rem;
+    color: var(--text-muted);
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+    display: block;
+}
+
+/* Profissional - com truncamento */
+.agendamento-profissional {
+    font-size: 0.55rem;
+    color: var(--primary);
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+    display: block;
+}
+
+/* Status - CORREÇÃO PRINCIPAL: evitar overflow do texto "aguardando_pagamento" */
+.agendamento-status-tag {
+    font-size: 0.5rem;
+    padding: 1px 6px;
+    background: #f59e0b;
+    border-radius: 10px;
+    color: white;
+    display: inline-block;
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 2px;
+    font-weight: 500;
+}
+
+/* Status específicos com cores diferentes */
+.agendamento-status-tag[data-status="aguardando_pagamento"] {
+    background: #f59e0b;
+}
+
+.agendamento-status-tag[data-status="confirmado"] {
+    background: #10b981;
+}
+
+.agendamento-status-tag[data-status="concluido"] {
+    background: #6b7280;
+}
+
+.agendamento-status-tag[data-status="pendente"] {
+    background: #ef4444;
+}
+
+/* Versão simplificada do status para evitar overflow */
+.agendamento-status-tag .status-short {
+    display: inline;
+}
+
+.agendamento-status-tag .status-full {
+    display: none;
+}
+
+/* Em telas muito pequenas, mostrar apenas a primeira palavra do status */
+@media (max-width: 768px) {
+    .agendamento-status-tag .status-short {
+        display: none;
+    }
+    .agendamento-status-tag .status-full {
+        display: inline;
+    }
+    .agendamento-status-tag {
+        font-size: 0.45rem;
+        padding: 1px 4px;
+    }
+}
+
+/* Célula vazia (sem agendamento) */
+.agendamento-vazio {
+    height: 48px;
+}
+
+/* Linha da agenda - garantir altura consistente */
+.agenda-linha {
+    display: flex;
+    border-bottom: 1px solid var(--border-color);
+    min-height: 58px;
+}
+
+.agenda-linha:last-child {
+    border-bottom: none;
+}
+
+.agenda-hora {
+    width: 80px;
+    min-width: 80px;
+    max-width: 80px;
+    padding: 6px 4px;
+    font-size: 0.65rem;
+    text-align: center;
+    border-right: 1px solid var(--border-color);
+    background: var(--bg-dark);
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 500;
+    flex-shrink: 0;
+}
+
+/* Cabeçalho da agenda */
+.agenda-dia-coluna {
+    width: 120px;
+    min-width: 120px;
+    max-width: 120px;
+    padding: 10px 4px;
+    text-align: center;
+    border-right: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
+.agenda-dia-coluna:last-child {
+    border-right: none;
+}
+
+.dia-nome {
+    font-weight: 700;
+    font-size: 0.7rem;
+    color: var(--primary);
+    text-transform: uppercase;
+}
+
+.dia-data {
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+.dia-fechado-label {
+    font-size: 0.5rem;
+    color: var(--danger);
+    margin-top: 2px;
+    font-weight: 500;
+}
+
+/* Ajuste para o wrapper da agenda */
+.agenda-wrapper {
+    width: 100%;
+    overflow-x: auto !important;
+    overflow-y: visible;
+    -webkit-overflow-scrolling: touch;
+    border-radius: 16px;
+    position: relative;
+}
+
+.agenda-semana {
+    background: var(--bg-card);
+    border-radius: 16px;
+    border: 1px solid var(--border-color);
+    min-width: 750px !important;
+    width: max-content;
+    overflow: hidden;
+}
+
+.agenda-cabecalho {
+    display: flex;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-dark);
+    border-radius: 16px 16px 0 0;
+    min-width: 750px;
+}
+
+.agenda-corpo {
+    display: flex;
+    flex-direction: column;
+    min-width: 750px;
+}
+
+/* Tooltip para mostrar texto completo ao passar o mouse */
+.agendamento-card[title] {
+    position: relative;
+}
+
+.agendamento-card[title]:hover::after {
+    content: attr(title);
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--bg-dark);
+    color: var(--text-main);
+    padding: 4px 10px;
+    border-radius: 8px;
+    font-size: 0.6rem;
+    white-space: nowrap;
+    z-index: 100;
+    border: 1px solid var(--border-color);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    pointer-events: none;
+}
