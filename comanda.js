@@ -1,10 +1,10 @@
-// comanda.js - Versão Corrigida com NUMERAÇÃO DE COMANDAS FUNCIONANDO CORRETAMENTE
-// E SINCRONIZAÇÃO AUTOMÁTICA COM AGENDA + LIBERAÇÃO DE HORÁRIO (STATUS CANCELADO)
+// comanda.js - Versão Corrigida com FILTRO DE PERÍODO FUNCIONANDO
+// E SINCRONIZAÇÃO AUTOMÁTICA COM AGENDA + FUNÇÕES DE DIAGNÓSTICO
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { 
     getFirestore, collection, addDoc, updateDoc, doc, getDocs, getDoc, 
-    query, where, orderBy, Timestamp, onSnapshot, deleteDoc
+    query, where, orderBy, Timestamp, onSnapshot, deleteDoc, runTransaction
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
@@ -128,13 +128,50 @@ function getMetodoNome(metodo) {
     return nomes[metodo] || metodo;
 }
 
+function getDataSegura(comanda) {
+    try {
+        let data = null;
+        
+        if (comanda.dataCriacao) {
+            if (comanda.dataCriacao.toDate && typeof comanda.dataCriacao.toDate === 'function') {
+                data = comanda.dataCriacao.toDate();
+            } else if (typeof comanda.dataCriacao === 'string') {
+                data = new Date(comanda.dataCriacao);
+            } else if (comanda.dataCriacao instanceof Date) {
+                data = comanda.dataCriacao;
+            } else if (typeof comanda.dataCriacao === 'number') {
+                data = new Date(comanda.dataCriacao);
+            } else if (comanda.dataCriacao.seconds !== undefined) {
+                data = new Date(comanda.dataCriacao.seconds * 1000);
+            }
+        }
+        
+        if (!data || isNaN(data.getTime())) {
+            data = new Date();
+        }
+        
+        return data;
+    } catch (error) {
+        console.warn("⚠️ Erro ao obter data da comanda:", comanda.id);
+        return new Date();
+    }
+}
+
 // ==================== FUNÇÃO PARA DISPARAR ATUALIZAÇÃO DA AGENDA ====================
 
 function dispararAtualizacaoAgenda() {
     console.log("📢 Disparando atualização da agenda...");
     
+    if (typeof window.carregarAgenda === 'function') {
+        setTimeout(() => window.carregarAgenda(), 200);
+    }
+    
     if (typeof window.atualizarAgenda === 'function') {
         window.atualizarAgenda();
+    }
+    
+    if (typeof window.atualizarHorarios === 'function') {
+        setTimeout(() => window.atualizarHorarios(), 200);
     }
     
     const event = new CustomEvent('agendaAtualizada', { 
@@ -146,23 +183,301 @@ function dispararAtualizacaoAgenda() {
     });
     window.dispatchEvent(event);
     
+    const liberarEvent = new CustomEvent('horarioLiberado', { 
+        detail: { 
+            timestamp: Date.now(), 
+            source: 'comanda.js',
+            action: 'liberar_horario'
+        } 
+    });
+    window.dispatchEvent(liberarEvent);
+    
     try {
         localStorage.setItem('agendaAtualizada', JSON.stringify({ 
             timestamp: Date.now(), 
             source: 'comanda.js' 
         }));
-        setTimeout(() => localStorage.removeItem('agendaAtualizada'), 500);
+        localStorage.setItem('forcarAtualizacaoAgenda', JSON.stringify({ 
+            timestamp: Date.now(), 
+            action: 'liberar_horario'
+        }));
+        setTimeout(() => {
+            localStorage.removeItem('agendaAtualizada');
+            localStorage.removeItem('forcarAtualizacaoAgenda');
+        }, 2000);
     } catch(e) {}
 }
 
-// ==================== FUNÇÃO PARA LIBERAR HORÁRIO NA AGENDA (CORRIGIDA - STATUS CANCELADO) ====================
+// ==================== FUNÇÃO PARA LIBERAR HORÁRIO NA AGENDA (CORRIGIDA) ====================
 
-async function liberarHorarioAgenda(comandaId, comandaData) {
+async function liberarHorarioAgenda(comandaId, comandaData, motivo = "Cliente não compareceu") {
     try {
-        console.log("🔓 LIBERANDO HORÁRIO NA AGENDA para comanda:", comandaId);
+        console.log("🔓 ========== INICIANDO LIBERAÇÃO DE HORÁRIO ==========");
+        console.log("📋 Comanda ID:", comandaId);
+        console.log("📋 Dados da comanda:", {
+            agendamentoId: comandaData.agendamentoId,
+            clienteNome: comandaData.clienteNome,
+            status: comandaData.status,
+            dataAgendamento: comandaData.dataAgendamento
+        });
+        
+        // Se não tiver agendamentoId, tentar encontrar pelo cliente e data
+        if (!comandaData.agendamentoId) {
+            console.log("⚠️ Comanda sem agendamento vinculado, tentando encontrar automaticamente...");
+            mostrarToast("🔍 Tentando encontrar agendamento vinculado...", "sucesso");
+            
+            try {
+                // Tentar encontrar o agendamento pelo clienteId e data
+                const clienteId = comandaData.clienteId;
+                const dataAgendamento = comandaData.dataAgendamento || 
+                    (comandaData.dataCriacao?.toDate?.()?.toISOString()?.split('T')[0]) || 
+                    new Date().toISOString().split('T')[0];
+                
+                if (clienteId) {
+                    console.log(`🔍 Buscando agendamento para cliente ${clienteId} na data ${dataAgendamento}`);
+                    
+                    const agendamentosRef = collection(db, "agendamentos");
+                    const q = query(
+                        agendamentosRef,
+                        where("clienteId", "==", clienteId),
+                        where("data", "==", dataAgendamento)
+                    );
+                    const snapshot = await getDocs(q);
+                    
+                    if (!snapshot.empty) {
+                        // Encontrar o agendamento mais recente
+                        let agendamentoEncontrado = null;
+                        let dataMaisRecente = null;
+                        
+                        snapshot.forEach(doc => {
+                            const data = doc.data();
+                            if (data.createdAt) {
+                                const dataCriacao = data.createdAt.toDate ? data.createdAt.toDate() : new Date(data.createdAt);
+                                if (!dataMaisRecente || dataCriacao > dataMaisRecente) {
+                                    dataMaisRecente = dataCriacao;
+                                    agendamentoEncontrado = { id: doc.id, ...data };
+                                }
+                            } else if (!agendamentoEncontrado) {
+                                agendamentoEncontrado = { id: doc.id, ...data };
+                            }
+                        });
+                        
+                        if (agendamentoEncontrado) {
+                            console.log(`✅ Agendamento encontrado automaticamente: ${agendamentoEncontrado.id}`);
+                            comandaData.agendamentoId = agendamentoEncontrado.id;
+                            comandaData.dataAgendamento = agendamentoEncontrado.data;
+                            mostrarToast(`✅ Agendamento encontrado! Liberando horário...`, "sucesso");
+                        }
+                    } else {
+                        console.log("❌ Nenhum agendamento encontrado para este cliente e data");
+                        mostrarToast("⚠️ Não foi possível encontrar o agendamento vinculado.", "erro");
+                        return false;
+                    }
+                } else {
+                    console.log("❌ Cliente ID não disponível para busca automática");
+                    mostrarToast("⚠️ Esta comanda não possui agendamento vinculado.", "erro");
+                    return false;
+                }
+            } catch (buscaError) {
+                console.error("❌ Erro ao buscar agendamento automaticamente:", buscaError);
+                mostrarToast("⚠️ Erro ao buscar agendamento: " + buscaError.message, "erro");
+                return false;
+            }
+        }
         
         if (!comandaData.agendamentoId) {
-            console.log("⚠️ Comanda sem agendamento vinculado, não é possível liberar horário");
+            console.log("❌ Comanda sem agendamento vinculado após tentativa de busca");
+            mostrarToast("⚠️ Esta comanda não possui agendamento vinculado.", "erro");
+            return false;
+        }
+        
+        console.log(`📋 Agendamento ID: ${comandaData.agendamentoId}`);
+        
+        const agendamentoRef = doc(db, "agendamentos", comandaData.agendamentoId);
+        console.log("📡 Buscando agendamento no Firestore...");
+        const agendamentoDoc = await getDoc(agendamentoRef);
+        
+        if (!agendamentoDoc.exists()) {
+            console.log("❌ Agendamento NÃO encontrado no Firestore:", comandaData.agendamentoId);
+            mostrarToast("⚠️ Agendamento não encontrado no sistema.", "erro");
+            return false;
+        }
+        
+        const agendamento = agendamentoDoc.data();
+        console.log("📋 Agendamento encontrado:", {
+            id: agendamentoDoc.id,
+            status: agendamento.status,
+            horarioLiberado: agendamento.horarioLiberado,
+            data: agendamento.data,
+            horario: agendamento.horario,
+            profissional: agendamento.profissional
+        });
+        
+        // Se o horário já estiver liberado, não fazer nada
+        if (agendamento.horarioLiberado === true) {
+            console.log("✅ Horário já está liberado!");
+            mostrarToast("✅ Horário já está disponível na agenda!", "sucesso");
+            return true;
+        }
+        
+        // Se o status já for cancelado ou ausente, apenas marcar como liberado
+        if (agendamento.status === "cancelado" || agendamento.status === "ausente") {
+            console.log(`📋 Agendamento já está com status ${agendamento.status}, apenas marcando como liberado...`);
+            await updateDoc(agendamentoRef, {
+                horarioLiberado: true,
+                dataLiberacao: Timestamp.now(),
+                liberadoPor: "comanda",
+                liberadoPorId: comandaId,
+                atualizadoEm: Timestamp.now()
+            });
+            console.log("✅ Horário liberado!");
+            mostrarToast("✅ Horário liberado na agenda!", "sucesso");
+            
+            // Disparar atualização
+            dispararAtualizacaoAgenda();
+            return true;
+        }
+        
+        const dataAgendamento = agendamento.data;
+        const horarioAgendamento = agendamento.horario;
+        const profissionalId = agendamento.profissionalId;
+        const profissionalNome = agendamento.profissional;
+        
+        console.log(`📅 Agendamento: ${dataAgendamento} às ${horarioAgendamento} - Profissional: ${profissionalNome}`);
+        
+        // Usar transação para garantir consistência
+        console.log("🔄 Iniciando transação...");
+        await runTransaction(db, async (transaction) => {
+            const agendamentoRefDoc = doc(db, "agendamentos", comandaData.agendamentoId);
+            const agendamentoDocAtual = await transaction.get(agendamentoRefDoc);
+            
+            if (!agendamentoDocAtual.exists()) {
+                throw new Error("Agendamento não existe mais!");
+            }
+            
+            const dadosAtuais = agendamentoDocAtual.data();
+            console.log("📋 Dados atuais do agendamento:", {
+                status: dadosAtuais.status,
+                horarioLiberado: dadosAtuais.horarioLiberado
+            });
+            
+            // ATUALIZAR COMPLETAMENTE O AGENDAMENTO
+            console.log("✏️ Atualizando agendamento...");
+            transaction.update(agendamentoRefDoc, {
+                status: "cancelado",
+                dataCancelamento: Timestamp.now(),
+                motivoCancelamento: motivo || "Cancelado via comanda - Horário liberado",
+                horarioLiberado: true,  // CAMPO CRUCIAL
+                dataLiberacao: Timestamp.now(),
+                liberadoPor: "comanda",
+                liberadoPorId: comandaId,
+                atualizadoEm: Timestamp.now()
+            });
+            console.log("✅ Transação concluída!");
+        });
+        
+        console.log(`✅ Agendamento ${comandaData.agendamentoId} marcado como CANCELADO`);
+        console.log(`📋 horarioLiberado = true, status = cancelado`);
+        
+        // VERIFICAR SE FOI ATUALIZADO
+        const verificarDoc = await getDoc(agendamentoRef);
+        const verificarData = verificarDoc.data();
+        console.log("🔍 Verificação após atualização:", {
+            status: verificarData.status,
+            horarioLiberado: verificarData.horarioLiberado
+        });
+        
+        // Disparar atualização da agenda com múltiplos métodos
+        dispararAtualizacaoAgenda();
+        
+        // Disparar evento com detalhes específicos
+        const event = new CustomEvent('horarioLiberado', { 
+            detail: { 
+                agendamentoId: comandaData.agendamentoId,
+                data: dataAgendamento,
+                horario: horarioAgendamento,
+                profissionalId: profissionalId,
+                profissionalNome: profissionalNome,
+                timestamp: Date.now(),
+                acao: "cancelado",
+                horarioLiberado: true
+            } 
+        });
+        window.dispatchEvent(event);
+        
+        // Tentar recarregar os horários disponíveis na agenda
+        if (typeof window.recarregarHorariosDisponiveis === 'function') {
+            setTimeout(() => {
+                window.recarregarHorariosDisponiveis(dataAgendamento, profissionalId);
+            }, 300);
+        }
+        
+        // Salvar informação no localStorage para sincronização entre abas
+        try {
+            const horarioLiberadoData = { 
+                agendamentoId: comandaData.agendamentoId,
+                data: dataAgendamento,
+                horario: horarioAgendamento,
+                profissionalId: profissionalId,
+                profissionalNome: profissionalNome,
+                timestamp: Date.now(),
+                acao: "cancelado",
+                horarioLiberado: true
+            };
+            localStorage.setItem('horarioLiberado', JSON.stringify(horarioLiberadoData));
+            localStorage.setItem('ultimoHorarioLiberado', JSON.stringify({
+                ...horarioLiberadoData,
+                timestamp: Date.now()
+            }));
+            localStorage.setItem('forcarAtualizacaoAgenda', JSON.stringify({ 
+                timestamp: Date.now(), 
+                action: 'liberar_horario',
+                data: dataAgendamento,
+                horario: horarioAgendamento,
+                profissionalId: profissionalId,
+                horarioLiberado: true
+            }));
+            console.log("💾 Dados salvos no localStorage");
+        } catch(e) {
+            console.error("❌ Erro ao salvar localStorage:", e);
+        }
+        
+        mostrarToast(`✅ Horário ${horarioAgendamento} do dia ${dataAgendamento} liberado na agenda!`, "sucesso");
+        
+        // Forçar atualização da agenda chamando diretamente a função se disponível
+        if (typeof window.atualizarHorarios === 'function') {
+            setTimeout(() => {
+                const dataInput = document.getElementById("data");
+                if (dataInput && dataInput.value === dataAgendamento) {
+                    window.atualizarHorarios();
+                }
+            }, 500);
+        }
+        
+        if (typeof window.carregarAgenda === 'function') {
+            setTimeout(() => window.carregarAgenda(), 500);
+        }
+        
+        console.log("🔓 ========== LIBERAÇÃO DE HORÁRIO CONCLUÍDA ==========");
+        return true;
+        
+    } catch (error) {
+        console.error("❌ ========== ERRO NA LIBERAÇÃO DE HORÁRIO ==========");
+        console.error("❌ Erro:", error);
+        console.error("❌ Stack:", error.stack);
+        mostrarToast(`❌ Erro ao liberar horário: ${error.message}`, "erro");
+        return false;
+    }
+}
+
+// ==================== FUNÇÃO PARA REATIVAR HORÁRIO NA AGENDA ====================
+
+async function reativarHorarioAgenda(comandaId, comandaData) {
+    try {
+        console.log("🔄 REATIVANDO HORÁRIO NA AGENDA para comanda:", comandaId);
+        
+        if (!comandaData.agendamentoId) {
+            console.log("⚠️ Comanda sem agendamento vinculado");
             return false;
         }
         
@@ -174,81 +489,27 @@ async function liberarHorarioAgenda(comandaId, comandaData) {
             return false;
         }
         
-        const agendamento = agendamentoDoc.data();
-        const dataAgendamento = agendamento.data;
-        const horarioAgendamento = agendamento.horario;
-        const profissionalId = agendamento.profissionalId;
-        const profissionalNome = agendamento.profissional;
-        
-        // MARCAR COMO CANCELADO - O agendamento.js vai IGNORAR este status
         await updateDoc(agendamentoRef, {
-            status: "cancelado",
-            dataCancelamento: Timestamp.now(),
-            motivoCancelamento: comandaData.justificativaAusencia || "Cliente não compareceu - Horário liberado para novos agendamentos",
-            horarioLiberado: true,
-            dataLiberacao: Timestamp.now(),
-            liberadoPorAusencia: true,
+            status: "confirmado",
+            dataCancelamento: null,
+            motivoCancelamento: null,
+            horarioLiberado: false,
+            dataLiberacao: null,
+            liberadoPor: null,
+            liberadoPorId: null,
             atualizadoEm: Timestamp.now()
         });
         
-        console.log(`✅ Agendamento ${comandaData.agendamentoId} marcado como CANCELADO - horário ${horarioAgendamento} do dia ${dataAgendamento} está LIBERADO!`);
+        console.log(`✅ Agendamento ${comandaData.agendamentoId} reativado - horário reservado novamente!`);
         
         dispararAtualizacaoAgenda();
         
-        const event = new CustomEvent('horarioLiberado', { 
-            detail: { 
-                agendamentoId: comandaData.agendamentoId,
-                data: dataAgendamento,
-                horario: horarioAgendamento,
-                profissionalId: profissionalId,
-                profissionalNome: profissionalNome,
-                timestamp: Date.now(),
-                acao: "cancelado"
-            } 
-        });
-        window.dispatchEvent(event);
-        
-        if (typeof window.carregarAgenda === 'function') {
-            setTimeout(() => window.carregarAgenda(), 300);
-        }
-        
-        if (typeof window.recarregarHorariosDisponiveis === 'function') {
-            window.recarregarHorariosDisponiveis(dataAgendamento, profissionalId);
-        }
-        
-        if (typeof window.atualizarHorarios === 'function') {
-            setTimeout(() => window.atualizarHorarios(), 300);
-        }
-        
-        try {
-            const horarioLiberadoData = { 
-                agendamentoId: comandaData.agendamentoId,
-                data: dataAgendamento,
-                horario: horarioAgendamento,
-                profissionalId: profissionalId,
-                timestamp: Date.now(),
-                acao: "cancelado"
-            };
-            localStorage.setItem('horarioLiberado', JSON.stringify(horarioLiberadoData));
-            localStorage.setItem('forcarAtualizacaoAgenda', JSON.stringify({ 
-                timestamp: Date.now(), 
-                action: 'liberar_horario',
-                data: dataAgendamento,
-                horario: horarioAgendamento,
-                profissionalId: profissionalId
-            }));
-            setTimeout(() => {
-                localStorage.removeItem('horarioLiberado');
-                localStorage.removeItem('forcarAtualizacaoAgenda');
-            }, 1500);
-        } catch(e) {}
-        
-        console.log(`✅ Horário ${horarioAgendamento} do dia ${dataAgendamento} foi CANCELADO e estará DISPONÍVEL para novos agendamentos!`);
+        mostrarToast("✅ Horário reativado na agenda!", "sucesso");
         
         return true;
         
     } catch (error) {
-        console.error("❌ Erro ao liberar horário na agenda:", error);
+        console.error("❌ Erro ao reativar horário na agenda:", error);
         return false;
     }
 }
@@ -307,8 +568,10 @@ async function sincronizarAgendamentoComComanda(comandaId, comandaData, novoStat
                 updateData.motivoCancelamento = null;
                 updateData.dataAusencia = null;
                 updateData.motivoAusencia = null;
-                updateData.horarioLiberado = null;
+                updateData.horarioLiberado = false;
                 updateData.dataLiberacao = null;
+                updateData.liberadoPor = null;
+                updateData.liberadoPorId = null;
             }
             
             await updateDoc(agendamentoRef, updateData);
@@ -759,25 +1022,95 @@ function dispararAtualizacaoPagamento(comandaId) {
     } catch(e) { console.warn("Erro ao salvar no localStorage:", e); }
 }
 
-// ==================== FUNÇÕES DE FILTRO E PERÍODO ====================
+// ==================== FUNÇÕES DE FILTRO E PERÍODO (CORRIGIDAS) ====================
 
 function getDateRange() {
-    const hoje = new Date(); hoje.setHours(0,0,0,0);
-    const amanha = new Date(hoje); amanha.setDate(amanha.getDate() + 1);
+    const hoje = new Date(); 
+    hoje.setHours(0, 0, 0, 0);
+    
+    console.log(`📅 getDateRange() - Período atual: ${currentPeriodo}`);
+    
     switch(currentPeriodo) {
-        case "hoje": return { inicio: hoje, fim: amanha };
-        case "ontem": const ontem = new Date(hoje); ontem.setDate(ontem.getDate() - 1); const ontemFim = new Date(ontem); ontemFim.setDate(ontemFim.getDate() + 1); return { inicio: ontem, fim: ontemFim };
-        case "semana": const inicioSemana = new Date(hoje); inicioSemana.setDate(hoje.getDate() - hoje.getDay()); const fimSemana = new Date(inicioSemana); fimSemana.setDate(fimSemana.getDate() + 7); return { inicio: inicioSemana, fim: fimSemana };
-        case "mes": return { inicio: new Date(hoje.getFullYear(), hoje.getMonth(), 1), fim: new Date(hoje.getFullYear(), hoje.getMonth() + 1, 1) };
-        case "personalizado": if (dataInicioPersonalizada && dataFimPersonalizada) { const inicio = new Date(dataInicioPersonalizada); inicio.setHours(0,0,0,0); const fim = new Date(dataFimPersonalizada); fim.setHours(23,59,59,999); return { inicio, fim }; }
-        default: return { inicio: hoje, fim: amanha };
+        case "hoje": {
+            const fim = new Date(hoje);
+            fim.setDate(fim.getDate() + 1);
+            console.log(`   🔍 Hoje: ${hoje.toISOString().split('T')[0]} até ${fim.toISOString().split('T')[0]}`);
+            return { inicio: hoje, fim: fim };
+        }
+        case "ontem": {
+            const ontem = new Date(hoje);
+            ontem.setDate(ontem.getDate() - 1);
+            const ontemFim = new Date(ontem);
+            ontemFim.setDate(ontemFim.getDate() + 1);
+            console.log(`   🔍 Ontem: ${ontem.toISOString().split('T')[0]} até ${ontemFim.toISOString().split('T')[0]}`);
+            return { inicio: ontem, fim: ontemFim };
+        }
+        case "semana": {
+            const inicioSemana = new Date(hoje);
+            const diaSemana = hoje.getDay();
+            inicioSemana.setDate(hoje.getDate() - diaSemana);
+            inicioSemana.setHours(0, 0, 0, 0);
+            const fimSemana = new Date(inicioSemana);
+            fimSemana.setDate(fimSemana.getDate() + 7);
+            console.log(`   🔍 Esta semana: ${inicioSemana.toISOString().split('T')[0]} até ${fimSemana.toISOString().split('T')[0]}`);
+            return { inicio: inicioSemana, fim: fimSemana };
+        }
+        case "mes": {
+            const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+            const fimMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 1);
+            console.log(`   🔍 Este mês: ${inicioMes.toISOString().split('T')[0]} até ${fimMes.toISOString().split('T')[0]}`);
+            return { inicio: inicioMes, fim: fimMes };
+        }
+        case "trimestre": {
+            const inicioTrimestre = new Date(hoje.getFullYear(), hoje.getMonth() - (hoje.getMonth() % 3), 1);
+            const fimTrimestre = new Date(inicioTrimestre);
+            fimTrimestre.setMonth(fimTrimestre.getMonth() + 3);
+            console.log(`   🔍 Trimestre: ${inicioTrimestre.toISOString().split('T')[0]} até ${fimTrimestre.toISOString().split('T')[0]}`);
+            return { inicio: inicioTrimestre, fim: fimTrimestre };
+        }
+        case "ano": {
+            const inicioAno = new Date(hoje.getFullYear(), 0, 1);
+            const fimAno = new Date(hoje.getFullYear() + 1, 0, 1);
+            console.log(`   🔍 Este ano: ${inicioAno.toISOString().split('T')[0]} até ${fimAno.toISOString().split('T')[0]}`);
+            return { inicio: inicioAno, fim: fimAno };
+        }
+        case "personalizado": {
+            if (dataInicioPersonalizada && dataFimPersonalizada) { 
+                const inicio = new Date(dataInicioPersonalizada); 
+                inicio.setHours(0, 0, 0, 0); 
+                const fim = new Date(dataFimPersonalizada); 
+                fim.setHours(23, 59, 59, 999); 
+                console.log(`   🔍 Personalizado: ${inicio.toISOString().split('T')[0]} até ${fim.toISOString().split('T')[0]}`);
+                return { inicio, fim }; 
+            }
+            console.log("   ⚠️ Personalizado sem datas, usando hoje");
+            const fim = new Date(hoje);
+            fim.setDate(fim.getDate() + 1);
+            return { inicio: hoje, fim: fim };
+        }
+        default: {
+            console.log(`   ⚠️ Período desconhecido: ${currentPeriodo}, usando hoje`);
+            const fim = new Date(hoje);
+            fim.setDate(fim.getDate() + 1);
+            return { inicio: hoje, fim: fim };
+        }
     }
 }
 
 function filtrarPorPeriodo(c) {
-    const data = c.dataCriacao?.toDate ? c.dataCriacao.toDate() : new Date(c.dataCriacao);
-    const { inicio, fim } = getDateRange();
-    return data >= inicio && data <= fim;
+    try {
+        const data = getDataSegura(c);
+        const { inicio, fim } = getDateRange();
+        const dataStr = data.toISOString().split('T')[0];
+        const inicioStr = inicio.toISOString().split('T')[0];
+        const fimStr = fim.toISOString().split('T')[0];
+        const resultado = data >= inicio && data <= fim;
+        console.log(`   📋 Comanda ${c.id}: data=${dataStr}, inicio=${inicioStr}, fim=${fimStr}, resultado=${resultado}`);
+        return resultado;
+    } catch (error) {
+        console.error("❌ Erro ao filtrar por período:", error, c.id);
+        return true;
+    }
 }
 
 // ==================== CARREGAMENTO DE DADOS ====================
@@ -1049,7 +1382,7 @@ function renderizarComandaEspecifica(comanda) {
     });
     
     const totalHtml = descontoValor > 0 ? `<span style="text-decoration: line-through; font-size: 0.75rem; color: #94a3b8;">${formatarMoeda(subtotal)}</span> <strong style="color: #10b981;">${formatarMoeda(totalFinal)}</strong>` : `<strong>${formatarMoeda(totalFinal)}</strong>`;
-    const data = comanda.dataCriacao?.toDate ? comanda.dataCriacao.toDate() : new Date();
+    const data = getDataSegura(comanda);
     const dataFormatada = data.toLocaleDateString('pt-BR');
     const horario = data.toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'});
     const ausenciaBadge = isAusente && comanda.justificativaAusencia ? `<span class="ausencia-badge" title="${escapeHtml(comanda.justificativaAusencia)}"><i class="fa-solid fa-comment"></i> ${escapeHtml(comanda.justificativaAusencia.substring(0, 30))}${comanda.justificativaAusencia.length > 30 ? '...' : ''}</span>` : '';
@@ -1164,6 +1497,7 @@ function iniciarListenerComandas() {
         (snapshot) => {
             comandas = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
             console.log(`📊 ${comandas.length} comandas carregadas`);
+            console.log(`📌 Aplicando filtros: Status=${currentFilter}, Período=${currentPeriodo}`);
             aplicarFiltros();
             atualizarMetricas();
             dispararAtualizacaoPagamento('all');
@@ -1173,6 +1507,12 @@ function iniciarListenerComandas() {
 }
 
 function aplicarFiltros() {
+    console.log(`🔍 === APLICANDO FILTROS ===`);
+    console.log(`   Status: ${currentFilter}`);
+    console.log(`   Período: ${currentPeriodo}`);
+    console.log(`   Barbeiro: ${currentBarbeiroFilter || "Todos"}`);
+    console.log(`   Busca: "${currentSearch}"`);
+    
     if (filtrandoComandaEspecifica && comandaEspecificaId) {
         const comandaEspecifica = comandas.find(c => c.id === comandaEspecificaId);
         if (comandaEspecifica) {
@@ -1180,20 +1520,54 @@ function aplicarFiltros() {
             return;
         }
     }
+    
     if (!comandasGrid) return;
+    
     let filtradas = [...comandas];
-    if (currentFilter !== "todas") filtradas = filtradas.filter(c => c.status === currentFilter);
-    filtradas = filtradas.filter(c => filtrarPorPeriodo(c));
-    if (currentBarbeiroFilter) filtradas = filtradas.filter(c => c.barbeiroId === currentBarbeiroFilter);
+    console.log(`   Total inicial: ${filtradas.length} comandas`);
+    
+    // Filtro por status
+    if (currentFilter && currentFilter !== "todas") {
+        filtradas = filtradas.filter(c => c.status === currentFilter);
+        console.log(`   Após filtro status (${currentFilter}): ${filtradas.length}`);
+    }
+    
+    // Filtro por período
+    if (currentPeriodo && currentPeriodo !== "todas") {
+        const antes = filtradas.length;
+        filtradas = filtradas.filter(c => filtrarPorPeriodo(c));
+        console.log(`   Após filtro período (${currentPeriodo}): ${filtradas.length} (antes: ${antes})`);
+    }
+    
+    // Filtro por barbeiro
+    if (currentBarbeiroFilter) {
+        filtradas = filtradas.filter(c => {
+            if (c.barbeiroId === currentBarbeiroFilter) return true;
+            if (c.barbeiroNome && c.barbeiroNome.toLowerCase().includes(currentBarbeiroFilter.toLowerCase())) return true;
+            const barbeiro = profissionais.find(p => p.id === currentBarbeiroFilter);
+            if (barbeiro && c.barbeiroNome === barbeiro.nome) return true;
+            return false;
+        });
+        console.log(`   Após filtro barbeiro: ${filtradas.length}`);
+    }
+    
+    // Filtro por busca
     if (currentSearch) {
-        const search = currentSearch.toLowerCase();
+        const search = currentSearch.toLowerCase().trim();
         filtradas = filtradas.filter(c => {
             const cliente = clientes.find(cl => cl.id === c.clienteId);
+            const clienteNome = cliente ? cliente.nome.toLowerCase() : (c.clienteNome || "").toLowerCase();
             const numeroStr = c.numeroComanda ? c.numeroComanda.toString() : "";
-            return (cliente && cliente.nome.toLowerCase().includes(search)) || numeroStr.includes(search) || (c.id?.toLowerCase().includes(search));
+            const idStr = c.id || "";
+            return clienteNome.includes(search) || 
+                   numeroStr.includes(search) || 
+                   idStr.toLowerCase().includes(search);
         });
+        console.log(`   Após filtro busca: ${filtradas.length}`);
     }
-    console.log(`📊 Filtro aplicado: ${currentFilter} | Total: ${filtradas.length} comandas`);
+    
+    console.log(`📊 Total de comandas filtradas: ${filtradas.length}`);
+    
     renderizarComandas(filtradas);
 }
 
@@ -1254,7 +1628,7 @@ function renderizarComandas(lista) {
             </div>`;
         });
         const totalHtml = descontoValor > 0 ? `<span style="text-decoration: line-through; font-size: 0.7rem; color: #94a3b8;">${formatarMoeda(subtotal)}</span> <strong style="color: #10b981;">${formatarMoeda(totalFinal)}</strong>` : `<strong>${formatarMoeda(totalFinal)}</strong>`;
-        const data = c.dataCriacao?.toDate ? c.dataCriacao.toDate() : new Date();
+        const data = getDataSegura(c);
         const dataFormatada = data.toLocaleDateString('pt-BR');
         const horario = data.toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'});
         const ausenciaBadge = isAusente && c.justificativaAusencia ? `<span class="ausencia-badge" title="${escapeHtml(c.justificativaAusencia)}"><i class="fa-solid fa-comment"></i> ${escapeHtml(c.justificativaAusencia.substring(0, 30))}${c.justificativaAusencia.length > 30 ? '...' : ''}</span>` : '';
@@ -1365,7 +1739,7 @@ async function verDetalhesComanda(id) {
         </div>`;
     }
     
-    const data = c.dataCriacao?.toDate ? c.dataCriacao.toDate() : new Date();
+    const data = getDataSegura(c);
     const dataFormatada = data.toLocaleDateString('pt-BR');
     const horario = data.toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'});
     const detalhesBody = document.getElementById("detalhesComandaBody");
@@ -1444,7 +1818,7 @@ async function podeFinalizarComanda(comandaData) {
     return { pode: true, mensagem: "" };
 }
 
-// ==================== FUNÇÃO PARA MARCAR COMO AUSENTE (ATUALIZADA) ====================
+// ==================== FUNÇÃO PARA MARCAR COMO AUSENTE ====================
 
 async function marcarComoAusente() {
     if (!comandaParaAusencia) return;
@@ -1467,9 +1841,11 @@ async function marcarComoAusente() {
         const comandaData = comandaDoc.data();
         
         if (liberarHorario) {
-            console.log("🔓 Liberando horário na agenda (marcando como CANCELADO)...");
-            await liberarHorarioAgenda(comandaParaAusencia, comandaData);
-            mostrarToast("✅ Horário liberado na agenda! Agora está disponível para novos agendamentos.", "sucesso");
+            console.log("🔓 Liberando horário na agenda (marcando como AUSENTE)...");
+            const liberado = await liberarHorarioAgenda(comandaParaAusencia, comandaData, justificativa || "Cliente não compareceu");
+            if (liberado) {
+                mostrarToast("✅ Horário liberado na agenda! Agora está disponível para novos agendamentos.", "sucesso");
+            }
         } else {
             if (comandaData.agendamentoId) {
                 const agendamentoRef = doc(db, "agendamentos", comandaData.agendamentoId);
@@ -1478,7 +1854,7 @@ async function marcarComoAusente() {
                     await updateDoc(agendamentoRef, {
                         status: "ausente",
                         dataAusencia: Timestamp.now(),
-                        motivoAusencia: justificativa,
+                        motivoAusencia: justificativa || "Cliente não compareceu",
                         horarioLiberado: false,
                         atualizadoEm: Timestamp.now()
                     });
@@ -1507,19 +1883,13 @@ async function marcarComoAusente() {
         
         dispararAtualizacaoAgenda();
         
-        if (liberarHorario) {
-            setTimeout(() => {
-                mostrarToast("📅 O horário agora está disponível para novos agendamentos no painel de Agenda!", "sucesso");
-            }, 1500);
-        }
-        
     } catch (error) {
         console.error("❌ Erro ao marcar como ausente:", error);
         mostrarToast("Erro ao marcar comanda como ausente: " + error.message, "erro");
     }
 }
 
-// ==================== FUNÇÃO PARA REATIVAR COMANDA ====================
+// ==================== FUNÇÃO PARA REATIVAR COMANDA AUSENTE ====================
 
 async function reativarComanda() {
     if (!comandaParaReativar) return;
@@ -1586,24 +1956,27 @@ async function reativarComanda() {
                         motivoCancelamento: null,
                         dataAusencia: null,
                         motivoAusencia: null,
-                        horarioLiberado: null,
+                        horarioLiberado: false,
                         dataLiberacao: null,
-                        liberadoPorAusencia: null,
+                        liberadoPor: null,
+                        liberadoPorId: null,
                         atualizadoEm: Timestamp.now()
                     });
                     
                     await updateDoc(comandaRef, { 
                         status: "aberta",
-                        horarioLiberado: null,
+                        horarioLiberado: false,
                         precisaReagendar: false,
                         updatedAt: Timestamp.now() 
                     });
+                    
+                    mostrarToast("✅ Horário reativado na agenda!", "sucesso");
                 }
             }
         } else {
             await updateDoc(comandaRef, { 
                 status: "aberta",
-                horarioLiberado: null,
+                horarioLiberado: false,
                 updatedAt: Timestamp.now() 
             });
         }
@@ -1627,12 +2000,109 @@ async function reativarComanda() {
     }
 }
 
+// ==================== FUNÇÃO PARA MARCAR COMO CANCELADO (COM LIBERAÇÃO DE HORÁRIO) ====================
+
+async function marcarComoCancelado() {
+    if (!comandaParaCancelamento) return;
+    
+    const justificativa = document.getElementById("justificativaCancelamento")?.value || "";
+    const liberarHorario = document.querySelector('input[name="liberarHorarioCancelamento"]:checked')?.value === "sim";
+    
+    try {
+        console.log("🚫 Cancelando comanda:", comandaParaCancelamento);
+        console.log("   Liberar horário na agenda:", liberarHorario);
+        
+        const comandaRef = doc(db, "comandas", comandaParaCancelamento);
+        const comandaDoc = await getDoc(comandaRef);
+        
+        if (!comandaDoc.exists()) {
+            mostrarToast("Comanda não encontrada", "erro");
+            return;
+        }
+        
+        const comandaData = comandaDoc.data();
+        
+        if (liberarHorario) {
+            console.log("🔓 Liberando horário na agenda (marcando como CANCELADO)...");
+            const liberado = await liberarHorarioAgenda(comandaParaCancelamento, comandaData, justificativa || "Cancelado via comanda");
+            if (liberado) {
+                mostrarToast("✅ Horário liberado na agenda! Agora está disponível para novos agendamentos.", "sucesso");
+            } else {
+                console.log("⚠️ Falha ao liberar horário. Tentando método alternativo...");
+                // Tentativa alternativa: atualizar diretamente
+                if (comandaData.agendamentoId) {
+                    try {
+                        const agendamentoRef = doc(db, "agendamentos", comandaData.agendamentoId);
+                        await updateDoc(agendamentoRef, {
+                            status: "cancelado",
+                            dataCancelamento: Timestamp.now(),
+                            motivoCancelamento: justificativa || "Cancelado via comanda",
+                            horarioLiberado: true,
+                            dataLiberacao: Timestamp.now(),
+                            liberadoPor: "comanda_alternativo",
+                            liberadoPorId: comandaParaCancelamento,
+                            atualizadoEm: Timestamp.now()
+                        });
+                        console.log(`✅ Agendamento ${comandaData.agendamentoId} liberado via método alternativo!`);
+                        mostrarToast("✅ Horário liberado na agenda via método alternativo!", "sucesso");
+                        dispararAtualizacaoAgenda();
+                    } catch (altError) {
+                        console.error("❌ Método alternativo também falhou:", altError);
+                        mostrarToast("⚠️ Não foi possível liberar o horário. Verifique o console.", "erro");
+                    }
+                }
+            }
+        } else {
+            if (comandaData.agendamentoId) {
+                const agendamentoRef = doc(db, "agendamentos", comandaData.agendamentoId);
+                const agendamentoDoc = await getDoc(agendamentoRef);
+                if (agendamentoDoc.exists()) {
+                    await updateDoc(agendamentoRef, {
+                        status: "cancelado",
+                        dataCancelamento: Timestamp.now(),
+                        motivoCancelamento: justificativa || "Cancelado via comanda",
+                        horarioLiberado: false,
+                        atualizadoEm: Timestamp.now()
+                    });
+                    console.log(`✅ Agendamento ${comandaData.agendamentoId} marcado como cancelado (horário NÃO liberado)`);
+                }
+            }
+            mostrarToast("✅ Comanda cancelada. Horário permanece reservado.", "sucesso");
+        }
+        
+        await updateDoc(comandaRef, {
+            status: "cancelado",
+            justificativaCancelamento: justificativa,
+            dataCancelamento: Timestamp.now(),
+            horarioLiberado: liberarHorario,
+            updatedAt: Timestamp.now()
+        });
+        
+        dispararAtualizacaoPagamento(comandaParaCancelamento);
+        fecharModalJustificarCancelamento();
+        
+        if (typeof aplicarFiltros === 'function') aplicarFiltros();
+        
+        if (filtrandoComandaEspecifica && comandaEspecificaId === comandaParaCancelamento) {
+            setTimeout(() => filtrarPorIdComanda(comandaParaCancelamento), 1000);
+        }
+        
+        dispararAtualizacaoAgenda();
+        
+    } catch (error) {
+        console.error("❌ Erro ao cancelar comanda:", error);
+        mostrarToast("Erro ao cancelar comanda: " + error.message, "erro");
+    }
+}
+
 // ==================== FUNÇÕES DE CANCELAMENTO ====================
 
 function abrirModalJustificarCancelamento(comandaId) {
     comandaParaCancelamento = comandaId;
     const justificativa = document.getElementById("justificativaCancelamento");
     if (justificativa) justificativa.value = "";
+    const liberarHorarioNao = document.querySelector('input[name="liberarHorarioCancelamento"][value="nao"]');
+    if (liberarHorarioNao) liberarHorarioNao.checked = true;
     const modal = document.getElementById("modalJustificarCancelamento");
     if (modal) modal.classList.add("active");
 }
@@ -1641,35 +2111,6 @@ function fecharModalJustificarCancelamento() {
     const modal = document.getElementById("modalJustificarCancelamento");
     if (modal) modal.classList.remove("active");
     comandaParaCancelamento = null;
-}
-
-async function marcarComoCancelado() {
-    if (!comandaParaCancelamento) return;
-    const justificativa = document.getElementById("justificativaCancelamento")?.value || "";
-    try {
-        const comandaDoc = await getDoc(doc(db, "comandas", comandaParaCancelamento));
-        const comandaData = comandaDoc.data();
-        
-        await sincronizarAgendamentoComComanda(comandaParaCancelamento, comandaData, "cancelado");
-        
-        await updateDoc(doc(db, "comandas", comandaParaCancelamento), {
-            status: "cancelado", justificativaCancelamento: justificativa, dataCancelamento: Timestamp.now(), updatedAt: Timestamp.now()
-        });
-        
-        mostrarToast("Comanda cancelada e agendamento atualizado!");
-        dispararAtualizacaoPagamento(comandaParaCancelamento);
-        fecharModalJustificarCancelamento();
-        
-        if (typeof window.atualizarAgenda === 'function') {
-            setTimeout(() => window.atualizarAgenda(), 500);
-        }
-        
-        if (typeof aplicarFiltros === 'function') aplicarFiltros();
-        
-    } catch (error) {
-        console.error("Erro ao cancelar comanda:", error);
-        mostrarToast("Erro ao cancelar comanda", "erro");
-    }
 }
 
 function abrirModalReativarComandaCancelada(comandaId) {
@@ -1694,12 +2135,35 @@ async function reativarComandaCancelada() {
         }
         const comandaData = comandaDoc.data();
         
+        if (comandaData.agendamentoId) {
+            const agendamentoRef = doc(db, "agendamentos", comandaData.agendamentoId);
+            const agendamentoDoc = await getDoc(agendamentoRef);
+            if (agendamentoDoc.exists()) {
+                await updateDoc(agendamentoRef, {
+                    status: "confirmado",
+                    dataCancelamento: null,
+                    motivoCancelamento: null,
+                    horarioLiberado: false,
+                    dataLiberacao: null,
+                    liberadoPor: null,
+                    liberadoPorId: null,
+                    atualizadoEm: Timestamp.now()
+                });
+                console.log(`✅ Agendamento ${comandaData.agendamentoId} reativado para status: confirmado`);
+            }
+        }
+        
         await sincronizarAgendamentoComComanda(comandaParaReativarCancelada, comandaData, "aberta");
         
-        await updateDoc(doc(db, "comandas", comandaParaReativarCancelada), { status: "aberta", updatedAt: Timestamp.now() });
+        await updateDoc(doc(db, "comandas", comandaParaReativarCancelada), { 
+            status: "aberta", 
+            horarioLiberado: false,
+            updatedAt: Timestamp.now() 
+        });
         
         mostrarToast("Comanda reativada com sucesso! Agendamento retornou para Confirmados.", "sucesso");
         dispararAtualizacaoPagamento(comandaParaReativarCancelada);
+        dispararAtualizacaoAgenda();
         fecharModalReativarComandaCancelada();
         
         if (typeof window.atualizarAgenda === 'function') {
@@ -1721,6 +2185,8 @@ function abrirModalJustificarAusencia(comandaId) {
     comandaParaAusencia = comandaId;
     const justificativa = document.getElementById("justificativaAusencia");
     if (justificativa) justificativa.value = "";
+    const liberarHorarioNao = document.querySelector('input[name="liberarHorarioAusencia"][value="nao"]');
+    if (liberarHorarioNao) liberarHorarioNao.checked = true;
     const modal = document.getElementById("modalJustificarAusencia");
     if (modal) modal.classList.add("active");
 }
@@ -2590,23 +3056,83 @@ function setupEventListeners() {
     if (btnSalvarComanda) btnSalvarComanda.addEventListener("click", () => salvarComanda(false));
     if (btnFinalizarComanda) btnFinalizarComanda.addEventListener("click", () => salvarComanda(true));
     if (btnAdicionarServico) btnAdicionarServico.addEventListener("click", () => adicionarServicoComanda());
-    if (filterStatus) filterStatus.addEventListener("change", e => { currentFilter = e.target.value; console.log("📌 Filtro alterado para:", currentFilter); aplicarFiltros(); });
-    if (filterBarbeiro) filterBarbeiro.addEventListener("change", e => { currentBarbeiroFilter = e.target.value; aplicarFiltros(); });
-    if (searchInput) searchInput.addEventListener("input", e => { currentSearch = e.target.value; aplicarFiltros(); });
-    if (filterPeriodo) {
-        filterPeriodo.addEventListener("change", e => { currentPeriodo = e.target.value; if (periodoPersonalizadoDiv) periodoPersonalizadoDiv.style.display = currentPeriodo === "personalizado" ? "flex" : "none"; aplicarFiltros(); atualizarMetricas(); });
+    if (filterStatus) {
+        filterStatus.value = currentFilter;
+        filterStatus.addEventListener("change", e => { 
+            currentFilter = e.target.value; 
+            console.log("📌 Filtro de status alterado para:", currentFilter); 
+            aplicarFiltros(); 
+        });
     }
-    if (dataInicioPersonalizadaInput) dataInicioPersonalizadaInput.addEventListener("change", e => { dataInicioPersonalizada = e.target.value; if (currentPeriodo === "personalizado") aplicarFiltros(); });
-    if (dataFimPersonalizadaInput) dataFimPersonalizadaInput.addEventListener("change", e => { dataFimPersonalizada = e.target.value; if (currentPeriodo === "personalizado") aplicarFiltros(); });
+    if (filterBarbeiro) {
+        filterBarbeiro.addEventListener("change", e => { 
+            currentBarbeiroFilter = e.target.value; 
+            console.log("📌 Filtro barbeiro alterado para:", currentBarbeiroFilter || "Todos"); 
+            aplicarFiltros(); 
+        });
+    }
+    if (searchInput) {
+        searchInput.addEventListener("input", e => { 
+            currentSearch = e.target.value; 
+            console.log("📌 Busca alterada para:", currentSearch); 
+            aplicarFiltros(); 
+        });
+    }
+    if (filterPeriodo) {
+        filterPeriodo.value = currentPeriodo;
+        filterPeriodo.addEventListener("change", e => { 
+            currentPeriodo = e.target.value; 
+            console.log("📌 Período alterado para:", currentPeriodo); 
+            if (periodoPersonalizadoDiv) {
+                periodoPersonalizadoDiv.style.display = currentPeriodo === "personalizado" ? "flex" : "none";
+            }
+            aplicarFiltros(); 
+            atualizarMetricas(); 
+        });
+    }
+    if (dataInicioPersonalizadaInput) {
+        dataInicioPersonalizadaInput.addEventListener("change", e => { 
+            dataInicioPersonalizada = e.target.value; 
+            if (currentPeriodo === "personalizado") aplicarFiltros(); 
+        });
+    }
+    if (dataFimPersonalizadaInput) {
+        dataFimPersonalizadaInput.addEventListener("change", e => { 
+            dataFimPersonalizada = e.target.value; 
+            if (currentPeriodo === "personalizado") aplicarFiltros(); 
+        });
+    }
     if (btnLimparFiltros) {
-        btnLimparFiltros.addEventListener("click", () => { if(filterStatus) filterStatus.value = "aberta"; if(filterBarbeiro) filterBarbeiro.value = ""; if(searchInput) searchInput.value = ""; if(filterPeriodo) filterPeriodo.value = "hoje"; if(periodoPersonalizadoDiv) periodoPersonalizadoDiv.style.display = "none"; currentFilter = "aberta"; currentBarbeiroFilter = ""; currentSearch = ""; currentPeriodo = "hoje"; aplicarFiltros(); atualizarMetricas(); });
+        btnLimparFiltros.addEventListener("click", () => { 
+            if(filterStatus) filterStatus.value = "todas"; 
+            if(filterBarbeiro) filterBarbeiro.value = ""; 
+            if(searchInput) searchInput.value = ""; 
+            if(filterPeriodo) filterPeriodo.value = "hoje"; 
+            if(periodoPersonalizadoDiv) periodoPersonalizadoDiv.style.display = "none"; 
+            currentFilter = "todas"; 
+            currentBarbeiroFilter = ""; 
+            currentSearch = ""; 
+            currentPeriodo = "hoje"; 
+            dataInicioPersonalizada = "";
+            dataFimPersonalizada = "";
+            console.log("📌 Filtros limpos");
+            aplicarFiltros(); 
+            atualizarMetricas(); 
+        });
     }
     const btnAdicionarItemComanda = document.getElementById("btnAdicionarItemComanda");
     const btnSalvarEdicaoComanda = document.getElementById("btnSalvarEdicaoComanda");
     const tipoItemSelect = document.getElementById("tipoItemSelect");
     if (btnAdicionarItemComanda) btnAdicionarItemComanda.addEventListener("click", adicionarItemNaComanda);
     if (btnSalvarEdicaoComanda) btnSalvarEdicaoComanda.addEventListener("click", salvarEdicaoComanda);
-    if (tipoItemSelect) { tipoItemSelect.addEventListener("change", e => { const servicoSelectGroup = document.getElementById("servicoSelectGroup"); const produtoSelectGroup = document.getElementById("produtoSelectGroup"); if (servicoSelectGroup) servicoSelectGroup.style.display = e.target.value === "servico" ? "block" : "none"; if (produtoSelectGroup) produtoSelectGroup.style.display = e.target.value === "produto" ? "block" : "none"; }); }
+    if (tipoItemSelect) { 
+        tipoItemSelect.addEventListener("change", e => { 
+            const servicoSelectGroup = document.getElementById("servicoSelectGroup"); 
+            const produtoSelectGroup = document.getElementById("produtoSelectGroup"); 
+            if (servicoSelectGroup) servicoSelectGroup.style.display = e.target.value === "servico" ? "block" : "none"; 
+            if (produtoSelectGroup) produtoSelectGroup.style.display = e.target.value === "produto" ? "block" : "none"; 
+        }); 
+    }
     configurarEventosDesconto();
 }
 
@@ -2666,6 +3192,326 @@ window.addEventListener('storage', (e) => {
     }
 });
 
+// ==================== FUNÇÕES DE DIAGNÓSTICO E CORREÇÃO ====================
+
+window.diagnosticarHorario = async function(data, horario, profissionalId = null) {
+    console.log("🔍 DIAGNÓSTICO DE HORÁRIO");
+    console.log("=================================");
+    console.log(`📅 Data: ${data}`);
+    console.log(`🕐 Horário: ${horario}`);
+    console.log(`👨‍🦱 Profissional ID: ${profissionalId || "Todos"}`);
+    
+    if (!data || !horario) {
+        console.log("❌ Data e horário são obrigatórios!");
+        mostrarToast("❌ Informe data e horário!", "erro");
+        return;
+    }
+    
+    try {
+        const agendamentosRef = collection(db, "agendamentos");
+        let q = query(
+            agendamentosRef,
+            where("data", "==", data),
+            where("horario", "==", horario)
+        );
+        
+        if (profissionalId) {
+            q = query(q, where("profissionalId", "==", profissionalId));
+        }
+        
+        const snapshot = await getDocs(q);
+        
+        console.log(`📊 Encontrados ${snapshot.size} agendamentos para este horário:`);
+        console.log("");
+        
+        if (snapshot.empty) {
+            console.log("✅ Nenhum agendamento encontrado para este horário. Está DISPONÍVEL!");
+            mostrarToast("✅ Horário está disponível para agendamento!", "sucesso");
+            return { total: 0, agendamentos: [], disponivel: true };
+        }
+        
+        const agendamentos = [];
+        let horarioOcupado = false;
+        
+        snapshot.forEach(doc => {
+            const agendamento = doc.data();
+            const liberado = agendamento.horarioLiberado === true;
+            const status = agendamento.status || "N/A";
+            
+            agendamentos.push({
+                id: doc.id,
+                status: status,
+                horarioLiberado: liberado,
+                clienteNome: agendamento.nome || agendamento.cliente || "N/A",
+                profissional: agendamento.profissional || "N/A",
+                data: agendamento.data,
+                horario: agendamento.horario,
+                motivoCancelamento: agendamento.motivoCancelamento || "N/A"
+            });
+            
+            console.log(`   📋 ID: ${doc.id}`);
+            console.log(`      Status: ${status}`);
+            console.log(`      horarioLiberado: ${liberado ? '✅ TRUE' : '❌ FALSE'}`);
+            console.log(`      Cliente: ${agendamento.nome || agendamento.cliente || 'N/A'}`);
+            console.log(`      Profissional: ${agendamento.profissional || 'N/A'}`);
+            console.log(`      Motivo Cancelamento: ${agendamento.motivoCancelamento || 'N/A'}`);
+            console.log("   ---");
+            
+            // Verificar se o horário está ocupado (não liberado e status ativo)
+            if (!liberado && !["cancelado", "ausente"].includes(status)) {
+                horarioOcupado = true;
+            }
+        });
+        
+        console.log("");
+        console.log("📊 RESULTADO:");
+        if (horarioOcupado) {
+            console.log("❌ Horário está OCUPADO!");
+            mostrarToast("❌ Horário está ocupado por um agendamento ativo.", "erro");
+        } else {
+            console.log("✅ Horário está DISPONÍVEL!");
+            mostrarToast("✅ Horário está disponível para agendamento!", "sucesso");
+        }
+        
+        return {
+            total: snapshot.size,
+            agendamentos: agendamentos,
+            disponivel: !horarioOcupado
+        };
+        
+    } catch (error) {
+        console.error("❌ Erro no diagnóstico:", error);
+        mostrarToast(`❌ Erro: ${error.message}`, "erro");
+        return null;
+    }
+};
+
+window.corrigirHorarioLiberado = async function(data, horario, profissionalId = null) {
+    console.log("🔧 CORRIGINDO HORÁRIO");
+    console.log("=================================");
+    console.log(`📅 Data: ${data}`);
+    console.log(`🕐 Horário: ${horario}`);
+    console.log(`👨‍🦱 Profissional ID: ${profissionalId || "Todos"}`);
+    
+    if (!data || !horario) {
+        console.log("❌ Data e horário são obrigatórios!");
+        mostrarToast("❌ Informe data e horário!", "erro");
+        return;
+    }
+    
+    try {
+        const agendamentosRef = collection(db, "agendamentos");
+        let q = query(
+            agendamentosRef,
+            where("data", "==", data),
+            where("horario", "==", horario)
+        );
+        
+        if (profissionalId) {
+            q = query(q, where("profissionalId", "==", profissionalId));
+        }
+        
+        const snapshot = await getDocs(q);
+        
+        console.log(`📊 Encontrados ${snapshot.size} agendamentos para este horário`);
+        
+        if (snapshot.empty) {
+            console.log("✅ Nenhum agendamento encontrado. Horário já está disponível!");
+            mostrarToast("✅ Horário já está disponível!", "sucesso");
+            return { corrigidos: 0, total: 0 };
+        }
+        
+        let corrigidos = 0;
+        let jaLiberados = 0;
+        
+        for (const doc of snapshot.docs) {
+            const agendamento = doc.data();
+            const status = agendamento.status || "N/A";
+            const horarioLiberado = agendamento.horarioLiberado === true;
+            
+            console.log(`📋 Processando agendamento ${doc.id}: status=${status}, horarioLiberado=${horarioLiberado}`);
+            
+            if (horarioLiberado) {
+                console.log(`   ✅ Já está liberado. Pulando.`);
+                jaLiberados++;
+                continue;
+            }
+            
+            if (status === "cancelado" || status === "ausente") {
+                console.log(`   ✅ Corrigindo: Definindo horarioLiberado=true para ${doc.id}`);
+                await updateDoc(doc(db, "agendamentos", doc.id), {
+                    horarioLiberado: true,
+                    dataLiberacao: Timestamp.now(),
+                    liberadoPor: "diagnostico",
+                    atualizadoEm: Timestamp.now()
+                });
+                corrigidos++;
+            } else {
+                console.log(`   ⚠️ Status ${status} não permite liberação automática.`);
+            }
+        }
+        
+        console.log(`✅ Correção concluída!`);
+        console.log(`   - ${corrigidos} agendamentos corrigidos (liberados)`);
+        console.log(`   - ${jaLiberados} agendamentos já estavam liberados`);
+        console.log(`   - ${snapshot.size - corrigidos - jaLiberados} agendamentos não corrigidos (status ativo)`);
+        
+        mostrarToast(`✅ ${corrigidos} horários liberados!`, "sucesso");
+        
+        if (corrigidos > 0) {
+            dispararAtualizacaoAgenda();
+            
+            if (typeof window.atualizarHorarios === 'function') {
+                setTimeout(() => window.atualizarHorarios(), 500);
+            }
+        }
+        
+        return { corrigidos, jaLiberados, total: snapshot.size };
+        
+    } catch (error) {
+        console.error("❌ Erro na correção:", error);
+        mostrarToast(`❌ Erro: ${error.message}`, "erro");
+        return null;
+    }
+};
+
+window.listarAgendamentosPorData = async function(data, profissionalId = null) {
+    console.log(`📋 LISTANDO AGENDAMENTOS PARA ${data}`);
+    console.log("=================================");
+    
+    try {
+        const agendamentosRef = collection(db, "agendamentos");
+        let q = query(agendamentosRef, where("data", "==", data));
+        
+        if (profissionalId) {
+            q = query(q, where("profissionalId", "==", profissionalId));
+        }
+        
+        const snapshot = await getDocs(q);
+        
+        console.log(`📊 Total de agendamentos: ${snapshot.size}`);
+        console.log("");
+        console.log("📋 LISTA DE AGENDAMENTOS:");
+        console.log("   # | Status     | Horário | Liberado | Cliente            | Profissional");
+        console.log("   " + "-".repeat(85));
+        
+        const agendamentos = [];
+        let index = 1;
+        
+        snapshot.forEach(doc => {
+            const a = doc.data();
+            const liberado = a.horarioLiberado === true ? "✅ SIM" : "❌ NÃO";
+            const status = (a.status || "N/A").padEnd(10);
+            const horario = (a.horario || "N/A").padEnd(8);
+            const cliente = (a.nome || a.cliente || "N/A").substring(0, 20).padEnd(20);
+            const profissional = (a.profissional || "N/A").substring(0, 15).padEnd(15);
+            
+            console.log(`   ${String(index).padStart(2)} | ${status} | ${horario} | ${liberado} | ${cliente} | ${profissional}`);
+            
+            agendamentos.push({
+                id: doc.id,
+                status: a.status || "N/A",
+                horario: a.horario || "N/A",
+                horarioLiberado: a.horarioLiberado === true,
+                cliente: a.nome || a.cliente || "N/A",
+                profissional: a.profissional || "N/A",
+                data: a.data
+            });
+            index++;
+        });
+        
+        console.log("");
+        console.log("✅ Listagem concluída!");
+        console.log(`📊 Resumo: ${snapshot.size} agendamentos encontrados`);
+        
+        const liberados = agendamentos.filter(a => a.horarioLiberado).length;
+        const ocupados = snapshot.size - liberados;
+        console.log(`   - Liberados: ${liberados}`);
+        console.log(`   - Ocupados: ${ocupados}`);
+        
+        return {
+            total: snapshot.size,
+            agendamentos: agendamentos,
+            liberados: liberados,
+            ocupados: ocupados
+        };
+        
+    } catch (error) {
+        console.error("❌ Erro ao listar agendamentos:", error);
+        return null;
+    }
+};
+
+window.corrigirTodosHorariosDia = async function(data, profissionalId = null) {
+    console.log(`🔧 CORRIGINDO TODOS OS HORÁRIOS DO DIA ${data}`);
+    console.log("=================================");
+    
+    try {
+        const agendamentosRef = collection(db, "agendamentos");
+        let q = query(
+            agendamentosRef,
+            where("data", "==", data),
+            where("status", "in", ["cancelado", "ausente"])
+        );
+        
+        if (profissionalId) {
+            q = query(q, where("profissionalId", "==", profissionalId));
+        }
+        
+        const snapshot = await getDocs(q);
+        
+        console.log(`📊 Encontrados ${snapshot.size} agendamentos cancelados/ausentes`);
+        
+        let corrigidos = 0;
+        let jaLiberados = 0;
+        const horariosLiberados = [];
+        
+        for (const doc of snapshot.docs) {
+            const agendamento = doc.data();
+            const horario = agendamento.horario || "N/A";
+            const horarioLiberado = agendamento.horarioLiberado === true;
+            
+            if (horarioLiberado) {
+                console.log(`   ⏭️ Horário ${horario} já está liberado.`);
+                jaLiberados++;
+                continue;
+            }
+            
+            console.log(`   ✅ Liberando horário ${horario} (${doc.id})`);
+            await updateDoc(doc(db, "agendamentos", doc.id), {
+                horarioLiberado: true,
+                dataLiberacao: Timestamp.now(),
+                liberadoPor: "diagnostico_massa",
+                atualizadoEm: Timestamp.now()
+            });
+            corrigidos++;
+            horariosLiberados.push(horario);
+        }
+        
+        console.log(`✅ Correção concluída!`);
+        console.log(`   - ${corrigidos} horários liberados`);
+        console.log(`   - ${jaLiberados} horários já estavam liberados`);
+        console.log(`   - Horários liberados: ${horariosLiberados.join(', ')}`);
+        
+        mostrarToast(`✅ ${corrigidos} horários foram liberados!`, "sucesso");
+        
+        if (corrigidos > 0) {
+            dispararAtualizacaoAgenda();
+            
+            if (typeof window.atualizarHorarios === 'function') {
+                setTimeout(() => window.atualizarHorarios(), 500);
+            }
+        }
+        
+        return { corrigidos, jaLiberados, total: snapshot.size, horariosLiberados };
+        
+    } catch (error) {
+        console.error("❌ Erro na correção:", error);
+        mostrarToast(`❌ Erro: ${error.message}`, "erro");
+        return null;
+    }
+};
+
 // ==================== INICIALIZAÇÃO ====================
 
 onAuthStateChanged(auth, user => { 
@@ -2690,7 +3536,7 @@ window.diagnosticarComandas = function() {
     console.log(`   - Finalizadas: ${comandas.filter(c => c.status === "finalizada").length}`);
     console.log(`   - Ausentes: ${comandas.filter(c => c.status === "ausente").length}`);
     console.log(`   - Canceladas: ${comandas.filter(c => c.status === "cancelado").length}`);
-    console.log(`📌 Filtro atual: ${currentFilter}`);
+    console.log(`📌 Filtro atual: Status=${currentFilter}, Período=${currentPeriodo}, Barbeiro=${currentBarbeiroFilter || "Todos"}`);
     console.log("=================================");
     return {
         total: comandas.length,
@@ -2698,7 +3544,9 @@ window.diagnosticarComandas = function() {
         finalizadas: comandas.filter(c => c.status === "finalizada").length,
         ausentes: comandas.filter(c => c.status === "ausente").length,
         canceladas: comandas.filter(c => c.status === "cancelado").length,
-        filtroAtual: currentFilter
+        filtroAtual: currentFilter,
+        periodoAtual: currentPeriodo,
+        barbeiroFiltro: currentBarbeiroFilter || "Todos"
     };
 };
 
@@ -2729,5 +3577,11 @@ window.sincronizarComandasAntigas = async function() {
 
 window.corrigirNumerosComandas = corrigirNumerosComandasAutomatico;
 window.dispararAtualizacaoAgenda = dispararAtualizacaoAgenda;
+window.liberarHorarioAgenda = liberarHorarioAgenda;
 
-console.log("comanda.js carregado com sucesso! Versão com LIBERAÇÃO DE HORÁRIO NA AGENDA (STATUS CANCELADO)");
+console.log("comanda.js carregado com sucesso! Versão com FILTRO DE PERÍODO CORRIGIDO");
+console.log("📋 Funções de diagnóstico disponíveis:");
+console.log("   await diagnosticarHorario('2026-06-15', '08:20')");
+console.log("   await corrigirHorarioLiberado('2026-06-15', '08:20')");
+console.log("   await listarAgendamentosPorData('2026-06-15')");
+console.log("   await corrigirTodosHorariosDia('2026-06-15')");

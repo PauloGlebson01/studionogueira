@@ -1,6 +1,5 @@
-// agendamento.js - Versão CORRIGIDA com VERIFICAÇÃO DE BLOQUEIOS OTIMIZADA
-// E FILTRO DE HORÁRIOS QUE IGNORA STATUS AUSENTE/CANCELADO
-// CORREÇÃO: Agendamentos concluídos NUNCA mais ficam disponíveis
+// agendamento.js - Versão CORRIGIDA com VERIFICAÇÃO DE HORÁRIOS LIBERADOS
+// Agendamentos com status CANCELADO ou AUSENTE ou horarioLiberado=true NÃO bloqueiam mais os horários
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { 
@@ -71,7 +70,7 @@ const horariosSegundaQuarta = [
 ];
 
 const horariosQuintaSabado = [
-    "08:00", "08:40", "09:20", "10:00", "10:40", "11:20",
+    "08:00", "08:40", "09:20", "10:00", "10:40",
     "14:00", "14:40", "15:20", "16:00", "17:20", "18:00", "18:40"
 ];
 
@@ -386,7 +385,7 @@ async function processarTelefoneCliente(telefone) {
     }
 }
 
-// ==================== FUNÇÃO PARA BUSCAR BLOQUEIOS (CORRIGIDA - SEM CACHE) ====================
+// ==================== FUNÇÃO PARA BUSCAR BLOQUEIOS ====================
 async function buscarBloqueios(data, profissionalId = null) {
     if (!data) return [];
     
@@ -402,9 +401,6 @@ async function buscarBloqueios(data, profissionalId = null) {
         snapshot.forEach(doc => {
             const bloqueio = { id: doc.id, ...doc.data() };
             
-            console.log(`📋 Verificando bloqueio: ${bloqueio.titulo}`, bloqueio);
-            
-            // Converter datas para comparação
             let dataInicio = null;
             let dataFim = null;
             
@@ -432,24 +428,16 @@ async function buscarBloqueios(data, profissionalId = null) {
                 }
             }
             
-            console.log(`   Data Início: ${dataInicio}, Data Fim: ${dataFim}, Data Verificação: ${data}`);
-            
-            // Verificar se a data está dentro do período do bloqueio
             let aplica = false;
             
-            // Verificar por período (dataInicio <= data <= dataFim)
             if (dataInicio && dataFim && dataInicio <= data && dataFim >= data) {
                 aplica = true;
-                console.log(`   ✅ BLOQUEIO DE PERÍODO: ${data} está entre ${dataInicio} e ${dataFim}`);
             }
             
-            // Verificar se tem horários específicos
             const temHorariosEspecificos = bloqueio.horarios && Array.isArray(bloqueio.horarios) && bloqueio.horarios.length > 0;
             
             if (aplica) {
-                // Se tiver profissionalId específico, filtrar
                 if (bloqueio.profissionalId && profissionalId && bloqueio.profissionalId !== profissionalId) {
-                    console.log(`   ⏭️ Ignorado: profissional diferente`);
                     return;
                 }
                 bloqueios.push(bloqueio);
@@ -458,9 +446,6 @@ async function buscarBloqueios(data, profissionalId = null) {
         });
         
         console.log(`📋 Encontrados ${bloqueios.length} bloqueios para esta data`);
-        bloqueios.forEach(b => {
-            console.log(`   - ${b.titulo}: horarios=${b.horarios?.join(', ') || 'todos'}`);
-        });
         
         return bloqueios;
         
@@ -470,7 +455,6 @@ async function buscarBloqueios(data, profissionalId = null) {
     }
 }
 
-// ==================== FUNÇÃO PARA FORMATAR DATA PARA COMPARAÇÃO ====================
 function formatarDataComparacao(data) {
     if (!data) return '';
     
@@ -508,14 +492,12 @@ async function isHorarioBloqueado(data, horario, profissionalId) {
     const bloqueios = await buscarBloqueios(data, profissionalId);
     
     for (const bloqueio of bloqueios) {
-        // Verificar se é bloqueio de dia inteiro
         const isDiaInteiro = !bloqueio.horarios || bloqueio.horarios.length === 0;
         if (isDiaInteiro) {
             console.log(`🔒 Horário ${horario} bloqueado - dia inteiro: ${bloqueio.titulo}`);
             return true;
         }
         
-        // Verificar se o horário específico está na lista de bloqueados
         if (bloqueio.horarios && Array.isArray(bloqueio.horarios)) {
             if (bloqueio.horarios.includes(horario)) {
                 console.log(`🔒 Horário ${horario} bloqueado especificamente: ${bloqueio.titulo}`);
@@ -1214,7 +1196,7 @@ function configurarDataMinima() {
     dataInput.min = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
 }
 
-// ==================== ATUALIZAR HORÁRIOS (CORRIGIDO - COM VERIFICAÇÃO DE BLOQUEIOS) ====================
+// ==================== ATUALIZAR HORÁRIOS (CORRIGIDO - VERSÃO FINAL) ====================
 async function atualizarHorarios() {
     const data = dataInput.value;
     const profissionalId = profissionalSelect?.value;
@@ -1247,14 +1229,12 @@ async function atualizarHorarios() {
     horariosDiv.innerHTML = '<div class="loading-horarios"><i class="fas fa-spinner fa-spin"></i> Verificando horários disponíveis...</div>';
     
     try {
-        // ========== BUSCAR BLOQUEIOS DO DIA (SEM CACHE) ==========
+        // Buscar bloqueios
         const bloqueios = await buscarBloqueios(data, profissionalId);
         console.log(`🔒 Bloqueios encontrados para ${data}:`, bloqueios.length);
         
-        // Verificar se há bloqueio de dia inteiro
         const temBloqueioDiaInteiro = bloqueios.some(b => {
             const isDiaInteiro = !b.horarios || b.horarios.length === 0;
-            console.log(`   Verificando ${b.titulo}: horarios=${b.horarios?.join(',') || 'vazio'}, isDiaInteiro=${isDiaInteiro}`);
             return isDiaInteiro;
         });
         
@@ -1270,7 +1250,6 @@ async function atualizarHorarios() {
             return;
         }
         
-        // Coletar horários bloqueados manualmente
         const horariosBloqueadosManualmente = new Set();
         for (const bloqueio of bloqueios) {
             if (bloqueio.horarios && Array.isArray(bloqueio.horarios)) {
@@ -1282,7 +1261,7 @@ async function atualizarHorarios() {
         }
         console.log(`🔒 Total de horários bloqueados manualmente: ${horariosBloqueadosManualmente.size}`);
         
-        // ========== BUSCAR AGENDAMENTOS OCUPADOS ==========
+        // ========== BUSCAR TODOS OS AGENDAMENTOS ==========
         const agendamentosRef = collection(db, "agendamentos");
         
         const q = query(
@@ -1293,30 +1272,48 @@ async function atualizarHorarios() {
         
         const snapshot = await getDocs(q);
         
-        // ========== CORREÇÃO: Status que ocupam horário (INCLUINDO CONCLUIDO) ==========
-        // Agora agendamentos concluídos NUNCA mais liberam o horário
+        // ========== STATUS QUE OCUPAM HORÁRIO ==========
+        // IMPORTANTE: Agendamentos com horarioLiberado = true NUNCA bloqueiam
+        // Agendamentos com status cancelado ou ausente NUNCA bloqueiam
         const statusOcupados = ["confirmado", "pendente", "aguardando_pagamento", "concluido"];
         const horariosOcupados = [];
         
         console.log(`📊 TOTAL de agendamentos encontrados: ${snapshot.size}`);
         console.log(`📋 Status considerados OCUPADOS: ${statusOcupados.join(', ')}`);
+        console.log(`📋 Status IGNORADOS (liberam horário): cancelado, ausente`);
+        console.log(`🔓 Agendamentos com horarioLiberado=true são IGNORADOS`);
         
         snapshot.forEach(doc => {
             const agendamento = doc.data();
             const status = agendamento.status;
             const horario = agendamento.horario;
+            const horarioLiberado = agendamento.horarioLiberado === true;
             
+            // PRIORIDADE MÁXIMA: Se horarioLiberado = true, IGNORAR completamente
+            if (horarioLiberado) {
+                console.log(`   🟢 HORÁRIO LIBERADO (IGNORADO): ${horario} (status: ${status}, horarioLiberado: true)`);
+                return; // Pula este agendamento completamente
+            }
+            
+            // Se o status for cancelado ou ausente, NÃO considerar como ocupado
+            if (status === "cancelado" || status === "ausente") {
+                console.log(`   🟢 IGNORADO/LIBERADO: ${horario} (status: ${status})`);
+                return;
+            }
+            
+            // Para os demais status, verificar se estão na lista de ocupados
             if (statusOcupados.includes(status)) {
                 if (horario) {
                     horariosOcupados.push({
                         horario: horario,
                         duracaoTotal: agendamento.duracaoTotal || 60,
-                        status: status
+                        status: status,
+                        horarioLiberado: horarioLiberado
                     });
-                    console.log(`   🔴 OCUPADO: ${horario} (status: ${status})`);
+                    console.log(`   🔴 OCUPADO: ${horario} (status: ${status}, horarioLiberado: ${horarioLiberado})`);
                 }
             } else {
-                console.log(`   🟢 IGNORADO/LIBERADO: ${horario} (status: ${status})`);
+                console.log(`   🟢 IGNORADO: ${horario} (status: ${status})`);
             }
         });
         
@@ -1327,7 +1324,7 @@ async function atualizarHorarios() {
         const horariosIndisponiveis = [];
         
         for (const horarioBase of infoAtendimento.horarios) {
-            // ========== VERIFICAR BLOQUEIO MANUAL ==========
+            // Verificar bloqueio manual
             if (horariosBloqueadosManualmente.has(horarioBase)) {
                 console.log(`   🔒 BLOQUEADO (manual): ${horarioBase}`);
                 horariosIndisponiveis.push(horarioBase);
@@ -1342,7 +1339,7 @@ async function atualizarHorarios() {
                 continue;
             }
             
-            // ========== VERIFICAR CONFLITO COM AGENDAMENTOS ==========
+            // Verificar conflito com agendamentos ocupados
             let conflito = false;
             for (const ocupado of horariosOcupados) {
                 const ocupadoInicio = horarioParaMinutos(ocupado.horario);
@@ -1487,7 +1484,7 @@ onAuthStateChanged(auth, async (user) => {
     }
 });
 
-// ==================== SUBMIT DO FORMULÁRIO ====================
+// ==================== SUBMIT DO FORMULÁRIO (CORRIGIDO) ====================
 if (form) {
     form.addEventListener("submit", async (e) => {
         e.preventDefault();
@@ -1512,17 +1509,51 @@ if (form) {
         
         if (data && horario && profissionalId) {
             const agendamentosRef = collection(db, "agendamentos");
+            
+            // CORREÇÃO: Buscar TODOS os agendamentos para verificar se o horário está realmente ocupado
             const q = query(
                 agendamentosRef, 
                 where("data", "==", data), 
                 where("horario", "==", horario),
-                where("profissionalId", "==", profissionalId),
-                where("status", "in", ["confirmado", "pendente", "aguardando_pagamento", "concluido"])
+                where("profissionalId", "==", profissionalId)
             );
             const existingSnap = await getDocs(q);
             
-            if (!existingSnap.empty) {
-                mostrarMensagem("❌ Este horário não está mais disponível. Por favor, selecione outro horário.", "erro");
+            // Verificar se algum agendamento ocupa este horário
+            let horarioOcupado = false;
+            let motivoOcupado = "";
+            
+            for (const doc of existingSnap.docs) {
+                const agendamento = doc.data();
+                const status = agendamento.status;
+                const horarioLiberado = agendamento.horarioLiberado === true;
+                
+                console.log(`📋 Verificando agendamento: status=${status}, horarioLiberado=${horarioLiberado}`);
+                
+                // Se horarioLiberado = true, NÃO ocupa o horário
+                if (horarioLiberado) {
+                    console.log(`🟢 Horário ${horario} foi LIBERADO (horarioLiberado=true)`);
+                    continue;
+                }
+                
+                // Se status for cancelado ou ausente, NÃO ocupa o horário
+                if (status === "cancelado" || status === "ausente") {
+                    console.log(`🟢 Horário ${horario} está ${status}, NÃO ocupa`);
+                    continue;
+                }
+                
+                // Verificar se o status ocupa o horário
+                const statusOcupados = ["confirmado", "pendente", "aguardando_pagamento", "concluido"];
+                if (statusOcupados.includes(status)) {
+                    horarioOcupado = true;
+                    motivoOcupado = `status: ${status}`;
+                    console.log(`🔴 Horário ${horario} está OCUPADO (${motivoOcupado})`);
+                    break;
+                }
+            }
+            
+            if (horarioOcupado) {
+                mostrarMensagem(`❌ Este horário não está mais disponível (${motivoOcupado}). Por favor, selecione outro horário.`, "erro");
                 await atualizarHorarios();
                 return;
             }
@@ -1744,7 +1775,7 @@ window.addEventListener('horarioLiberado', (event) => {
     const dataInput = document.getElementById("data");
     if (dataInput && dataInput.value === event.detail.data) {
         if (typeof atualizarHorarios === 'function') {
-            atualizarHorarios();
+            setTimeout(() => atualizarHorarios(), 300);
         }
     }
 });
@@ -1783,10 +1814,34 @@ window.addEventListener('storage', (e) => {
     }
 });
 
+// ==================== FUNÇÃO PARA FORÇAR RECARREGAMENTO DOS HORÁRIOS ====================
+window.forcarRecarregamentoHorarios = function() {
+    console.log("🔄 Forçando recarregamento dos horários...");
+    if (typeof atualizarHorarios === 'function') {
+        // Limpar cache local
+        localStorage.removeItem('horariosCache');
+        localStorage.removeItem('ultimaAtualizacaoHorarios');
+        
+        // Forçar atualização
+        setTimeout(() => atualizarHorarios(), 200);
+    }
+};
+
+// Listener para recarregar quando a página for focada
+document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+        console.log("👁️ Página ficou visível, recarregando horários...");
+        if (verificarCamposPreenchidos()) {
+            setTimeout(() => atualizarHorarios(), 300);
+        }
+    }
+});
+
 console.log("✅ agendamento.js carregado com sucesso!");
 console.log("📋 Horários Segunda à Quarta:", horariosSegundaQuarta);
 console.log("📋 Horários Quinta à Sábado:", horariosQuintaSabado);
 console.log("🔒 Sistema de bloqueios integrado!");
 console.log("👨‍👦 MODAL para seleção de múltiplos clientes com mesmo telefone!");
 console.log("✅ FILTRO DE HORÁRIOS: Ignora agendamentos com status ausente/cancelado!");
-console.log("🔒 CORREÇÃO: Agendamentos concluídos NUNCA mais ficam disponíveis!");
+console.log("🔓 HORÁRIOS LIBERADOS: Agendamentos com horarioLiberado=true NÃO bloqueiam mais!");
+console.log("🔄 Função forcarRecarregamentoHorarios() disponível para debug!");

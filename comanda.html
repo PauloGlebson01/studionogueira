@@ -471,7 +471,7 @@
         </div>
     </div>
 
-    <!-- Modal Justificar Cancelamento -->
+    <!-- Modal Justificar Cancelamento - COM OPÇÃO DE LIBERAR HORÁRIO -->
     <div id="modalJustificarCancelamento" class="modal">
         <div class="modal-content modal-small">
             <div class="modal-header">
@@ -480,11 +480,29 @@
             </div>
             <div class="modal-body">
                 <p>Deseja cancelar esta comanda?</p>
+                
                 <div class="form-group">
                     <label><i class="fa-solid fa-comment"></i> Motivo do cancelamento (opcional)</label>
                     <textarea id="justificativaCancelamento" rows="3"
                         placeholder="Ex: Cliente desistiu, produto indisponível..."></textarea>
                 </div>
+                
+                <!-- Opção para liberar horário na agenda -->
+                <div class="form-group liberar-horario-group">
+                    <label class="radio-label">
+                        <input type="radio" name="liberarHorarioCancelamento" value="sim"> 
+                        <span><i class="fa-solid fa-calendar-check"></i> Liberar horário na agenda</span>
+                    </label>
+                    <label class="radio-label">
+                        <input type="radio" name="liberarHorarioCancelamento" value="nao" checked> 
+                        <span><i class="fa-solid fa-calendar-times"></i> Manter horário reservado</span>
+                    </label>
+                    <small class="helper-text">
+                        <i class="fa-solid fa-info-circle"></i>
+                        Ao liberar o horário, ele ficará disponível para outros clientes na agenda.
+                    </small>
+                </div>
+                
                 <p class="text-warning">
                     <i class="fa-solid fa-triangle-exclamation"></i>
                     Esta ação não poderá ser desfeita automaticamente. Você poderá reativar a comanda se necessário.
@@ -531,15 +549,16 @@
             getFirestore, collection, getDocs, addDoc, updateDoc, doc, query, where, Timestamp, deleteDoc
         } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-        const firebaseConfig = {
-            apiKey: "AIzaSyCgarMuCZ4sT-VO_ldyQjyG5MB6mR6i8rU",
-            authDomain: "barbearia-softclick.firebaseapp.com",
-            projectId: "barbearia-softclick",
-            storageBucket: "barbearia-softclick.firebasestorage.app",
-            messagingSenderId: "1079307759020",
-            appId: "1:1079307759020:web:231e08fb89fcb6b1e51e09",
-            measurementId: "G-SKF0BNWEWK"
-        };
+//CONFIGURAÇÕES DE DADOS
+const firebaseConfig = {
+    apiKey: "AIzaSyC5xXm9T2nzh6xxZ5-zrMHfCNdqQOG8SZI",
+    authDomain: "studio-nogueira-e07bb.firebaseapp.com",
+    projectId: "studio-nogueira-e07bb",
+    storageBucket: "studio-nogueira-e07bb.firebasestorage.app",
+    messagingSenderId: "150077330983",
+    appId: "1:150077330983:web:a49838c4cde9df4e1de002",
+    measurementId: "G-WX477KDZQC"
+  };
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
