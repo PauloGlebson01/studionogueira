@@ -1,6 +1,6 @@
 // comanda.js - Versão Corrigida com FILTRO DE PERÍODO FUNCIONANDO
 // E SINCRONIZAÇÃO AUTOMÁTICA COM AGENDA + FUNÇÕES DE DIAGNÓSTICO
-// E VISUALIZAÇÃO DE GORJETA DOCUMENTAL
+// E VISUALIZAÇÃO DE GORJETA DOCUMENTAL + IMPRESSÃO DE DOCUMENTO NÃO FISCAL
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { 
@@ -1458,6 +1458,7 @@ function renderizarComandaEspecifica(comanda) {
                     <div style="margin-top: 15px; text-align: right;"><strong>Total:</strong> ${totalHtml}</div>
                     <div style="display: flex; gap: 10px; margin-top: 20px; flex-wrap: wrap;">
                         <button class="btn-view" data-id="${comanda.id}" style="flex: 1; padding: 10px; background: rgba(33, 153, 239, 0.15); border: none; border-radius: 10px; color: #2199EF; cursor: pointer; font-size: 0.8rem;"><i class="fa-solid fa-eye"></i> Ver detalhes</button>
+                        <button class="btn-imprimir-doc" data-id="${comanda.id}" style="flex: 1; padding: 10px; background: rgba(33, 153, 239, 0.15); border: none; border-radius: 10px; color: #2199EF; cursor: pointer; font-size: 0.8rem;"><i class="fa-solid fa-print"></i> Imprimir</button>
                         ${!isAusente && !isCancelado && comanda.status === "aberta" ? `
                             <button class="btn-editar" data-id="${comanda.id}" style="flex: 1; padding: 10px; background: rgba(33, 153, 239, 0.15); border: none; border-radius: 10px; color: #2199EF; cursor: pointer; font-size: 0.8rem;"><i class="fa-solid fa-pen"></i> Editar</button>
                             <button class="btn-cancelar" data-id="${comanda.id}" style="flex: 1; padding: 10px; background: rgba(239, 68, 68, 0.15); border: none; border-radius: 10px; color: #ef4444; cursor: pointer; font-size: 0.8rem;"><i class="fa-solid fa-ban"></i> Cancelar</button>
@@ -1475,6 +1476,7 @@ function renderizarComandaEspecifica(comanda) {
     const card = document.querySelector('.comanda-card');
     if (card) {
         const btnView = card.querySelector('.btn-view');
+        const btnImprimirDoc = card.querySelector('.btn-imprimir-doc');
         const btnEditar = card.querySelector('.btn-editar');
         const btnFinalizar = card.querySelector('.btn-finalizar');
         const btnMarcarAusente = card.querySelector('.btn-marcar-ausente');
@@ -1482,6 +1484,7 @@ function renderizarComandaEspecifica(comanda) {
         const btnReativar = card.querySelector('.btn-reativar');
         const btnReativarCancelado = card.querySelector('.btn-reativar-cancelado');
         if (btnView) btnView.addEventListener('click', (e) => { e.stopPropagation(); verDetalhesComanda(comanda.id); });
+        if (btnImprimirDoc) btnImprimirDoc.addEventListener('click', (e) => { e.stopPropagation(); imprimirDocumentoNaoFiscal(comanda.id); });
         if (btnEditar) btnEditar.addEventListener('click', (e) => { e.stopPropagation(); abrirModalEditarComanda(comanda.id); });
         if (btnFinalizar) btnFinalizar.addEventListener('click', async (e) => { e.stopPropagation(); if(confirm("Finalizar esta comanda?")) await finalizarComanda(comanda.id); });
         if (btnMarcarAusente) btnMarcarAusente.addEventListener('click', (e) => { e.stopPropagation(); abrirModalJustificarAusencia(comanda.id); });
@@ -1715,6 +1718,7 @@ function renderizarComandas(lista) {
                 <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.1); text-align: right;"><strong>Total:</strong> ${totalHtml}</div>
                 <div class="comanda-footer" style="display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap;">
                     <button class="btn-view" data-id="${c.id}" style="flex: 1; padding: 8px; background: rgba(33, 153, 239, 0.15); border: none; border-radius: 8px; color: #2199EF; cursor: pointer; font-size: 0.7rem;"><i class="fa-solid fa-eye"></i> Ver detalhes</button>
+                    <button class="btn-imprimir-doc" data-id="${c.id}" style="flex: 1; padding: 8px; background: rgba(33, 153, 239, 0.15); border: none; border-radius: 8px; color: #2199EF; cursor: pointer; font-size: 0.7rem;"><i class="fa-solid fa-print"></i> Imprimir</button>
                     ${!isAusente && !isCancelado && c.status === "aberta" ? `
                         <button class="btn-editar" data-id="${c.id}" style="flex: 1; padding: 8px; background: rgba(33, 153, 239, 0.15); border: none; border-radius: 8px; color: #2199EF; cursor: pointer; font-size: 0.7rem;"><i class="fa-solid fa-pen"></i> Editar</button>
                         <button class="btn-cancelar" data-id="${c.id}" style="flex: 1; padding: 8px; background: rgba(239, 68, 68, 0.15); border: none; border-radius: 8px; color: #ef4444; cursor: pointer; font-size: 0.7rem;"><i class="fa-solid fa-ban"></i> Cancelar</button>
@@ -1729,6 +1733,7 @@ function renderizarComandas(lista) {
     }).join('');
     
     document.querySelectorAll('.btn-view').forEach(btn => { btn.onclick = (e) => { e.stopPropagation(); verDetalhesComanda(btn.dataset.id); }; });
+    document.querySelectorAll('.btn-imprimir-doc').forEach(btn => { btn.onclick = (e) => { e.stopPropagation(); imprimirDocumentoNaoFiscal(btn.dataset.id); }; });
     document.querySelectorAll('.btn-editar').forEach(btn => { btn.onclick = (e) => { e.stopPropagation(); abrirModalEditarComanda(btn.dataset.id); }; });
     document.querySelectorAll('.btn-finalizar').forEach(btn => { btn.onclick = async (e) => { e.stopPropagation(); if(confirm("Finalizar esta comanda?")) await finalizarComanda(btn.dataset.id); }; });
     document.querySelectorAll('.btn-marcar-ausente').forEach(btn => { btn.onclick = (e) => { e.stopPropagation(); abrirModalJustificarAusencia(btn.dataset.id); }; });
@@ -3042,6 +3047,354 @@ function abrirModalProgramasDesconto() {
     carregarProgramasAtivos().then(programas => renderizarProgramasDesconto(programas)).catch(err => { if (grid) grid.innerHTML = '<div class="empty-comandas" style="color:#ef4444;"><i class="fa-solid fa-exclamation-triangle"></i><p>Erro ao carregar programas</p></div>'; });
 }
 
+// ==================== FUNÇÃO DE IMPRESSÃO DE DOCUMENTO NÃO FISCAL ====================
+
+function imprimirDocumentoNaoFiscal(comandaId) {
+    getDoc(doc(db, "comandas", comandaId)).then(async (docSnap) => {
+        if (!docSnap.exists()) {
+            mostrarToast("Comanda não encontrada", "erro");
+            return;
+        }
+
+        const comanda = { id: docSnap.id, ...docSnap.data() };
+        console.log("🖨️ Gerando documento não fiscal para comanda:", comandaId);
+
+        let clienteNome = comanda.clienteNome || "Cliente não informado";
+        let clienteTelefone = comanda.clienteTelefone || "";
+        let barbeiroNome = comanda.barbeiroNome || "Não informado";
+        let barbeiroId = comanda.barbeiroId;
+
+        if (comanda.clienteId) {
+            try {
+                const clienteDoc = await getDoc(doc(db, "clientes", comanda.clienteId));
+                if (clienteDoc.exists()) {
+                    const clienteData = clienteDoc.data();
+                    clienteNome = clienteData.nome || clienteNome;
+                    clienteTelefone = clienteData.telefone || clienteData.whatsapp || clienteData.celular || clienteTelefone;
+                }
+            } catch (e) { console.warn("Erro ao buscar cliente:", e); }
+        }
+
+        if (barbeiroId) {
+            try {
+                const barbeiroDoc = await getDoc(doc(db, "profissionais", barbeiroId));
+                if (barbeiroDoc.exists()) {
+                    barbeiroNome = barbeiroDoc.data().nome || barbeiroNome;
+                }
+            } catch (e) { console.warn("Erro ao buscar barbeiro:", e); }
+        }
+
+        const { subtotal, descontoValor, totalFinal } = calcularTotaisComanda(comanda);
+        const dataCriacao = getDataSegura(comanda);
+        const dataFormatada = dataCriacao.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        const horaFormatada = dataCriacao.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        const numeroComanda = getNumeroExibido(comanda);
+        const statusMap = { 'aberta': 'Em andamento', 'finalizada': 'Finalizada', 'ausente': 'Ausente', 'cancelado': 'Cancelado' };
+        const statusTexto = statusMap[comanda.status] || comanda.status || 'N/A';
+        const metodoNome = getMetodoNome(comanda.formaPagamento);
+        const metodoIcon = getMetodoIcon(comanda.formaPagamento);
+        const parcelasTexto = comanda.parcelas && comanda.parcelas > 1 ? ` (${comanda.parcelas}x)` : '';
+
+        let itensHTML = '';
+        let temItens = false;
+
+        (comanda.servicos || []).forEach(s => {
+            const serv = servicos.find(sv => sv.id === s.servicoId) || s;
+            const qtd = s.quantidade || 1;
+            const valor = (serv.preco || 0) * qtd;
+            temItens = true;
+            itensHTML += `
+                <div class="item-row">
+                    <span class="nome">✂️ ${escapeHtml(serv.nome)}</span>
+                    <span class="qtd">${qtd > 1 ? `x${qtd}` : ''}</span>
+                    <span class="preco">${formatarMoeda(valor)}</span>
+                </div>
+            `;
+        });
+
+        (comanda.pacotes || []).forEach(p => {
+            const pac = pacotes.find(pc => pc.id === p.pacoteId) || p;
+            const valor = p.preco || 0;
+            temItens = true;
+            itensHTML += `
+                <div class="item-row">
+                    <span class="nome">🎁 ${escapeHtml(pac.nome)} <span style="font-size:0.6rem;color:#f59e0b;font-weight:500;">(Pacote)</span></span>
+                    <span class="qtd"></span>
+                    <span class="preco" style="color:#f59e0b;">${formatarMoeda(valor)}</span>
+                </div>
+            `;
+        });
+
+        (comanda.produtos || []).forEach(p => {
+            const prod = produtos.find(pr => pr.id === p.produtoId) || p;
+            const qtd = p.quantidade || 1;
+            const valor = (prod.preco || 0) * qtd;
+            temItens = true;
+            const preBadge = p.isPreLancamento ? '<span class="badge badge-pre">📦 Pré-lançamento</span>' : '';
+            itensHTML += `
+                <div class="item-row">
+                    <span class="nome">📦 ${escapeHtml(prod.nome)} ${preBadge}</span>
+                    <span class="qtd">${qtd > 1 ? `x${qtd}` : ''}</span>
+                    <span class="preco ${p.isPreLancamento ? 'preco-pre' : ''}">${formatarMoeda(valor)}</span>
+                </div>
+            `;
+        });
+
+        if (!temItens) {
+            itensHTML = `<div style="text-align:center;padding:20px;color:#94a3b8;font-size:0.8rem;">Nenhum item registrado nesta comanda</div>`;
+        }
+
+        const conteudoHTML = `
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Comanda #${numeroComanda} - Studio Nogueira</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #ffffff;
+            color: #1a1a2e;
+            padding: 40px 30px;
+            max-width: 800px;
+            margin: 0 auto;
+            line-height: 1.5;
+        }
+        .documento { background: #ffffff; border-radius: 16px; padding: 0; }
+        .header { text-align: center; padding-bottom: 25px; border-bottom: 3px solid #2199EF; margin-bottom: 25px; }
+        .header .logo-text { font-size: 1.6rem; font-weight: 800; color: #2199EF; letter-spacing: -0.5px; }
+        .header .logo-text span { color: #1a1a2e; }
+        .header .subtitulo { font-size: 0.8rem; color: #64748b; margin-top: 4px; letter-spacing: 1px; }
+        .header .tipo-documento { margin-top: 12px; background: #f0f7ff; display: inline-block; padding: 6px 24px; border-radius: 20px; font-size: 0.7rem; font-weight: 600; color: #2199EF; text-transform: uppercase; letter-spacing: 0.5px; }
+        .titulo-comanda { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; padding: 16px 20px; background: #f8fafc; border-radius: 12px; border-left: 4px solid #2199EF; }
+        .titulo-comanda .numero { font-size: 1.1rem; font-weight: 700; color: #2199EF; }
+        .titulo-comanda .numero i { margin-right: 8px; }
+        .titulo-comanda .status { padding: 4px 14px; border-radius: 20px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; }
+        .status-finalizada { background: #d1fae5; color: #065f46; }
+        .status-aberta { background: #fef3c7; color: #92400e; }
+        .status-ausente { background: #fee2e2; color: #991b1b; }
+        .status-cancelado { background: #fee2e2; color: #991b1b; }
+        .status-pendente { background: #fef3c7; color: #92400e; }
+        .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 30px; background: #f8fafc; border-radius: 12px; padding: 18px 20px; margin-bottom: 20px; }
+        .info-grid .info-item { display: flex; flex-direction: column; }
+        .info-grid .info-item .label { font-size: 0.6rem; text-transform: uppercase; color: #94a3b8; font-weight: 600; letter-spacing: 0.5px; margin-bottom: 3px; }
+        .info-grid .info-item .value { font-size: 0.85rem; font-weight: 500; color: #1a1a2e; }
+        .info-grid .info-item .value i { margin-right: 6px; color: #2199EF; width: 18px; }
+        .info-grid .info-item.full-width { grid-column: 1 / -1; }
+        .tabela-itens { margin-bottom: 20px; }
+        .tabela-itens .titulo-secao { font-size: 0.7rem; text-transform: uppercase; color: #94a3b8; font-weight: 600; letter-spacing: 0.5px; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid #e2e8f0; }
+        .tabela-itens .item-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #f1f5f9; }
+        .tabela-itens .item-row:last-child { border-bottom: none; }
+        .tabela-itens .item-row .nome { font-size: 0.82rem; color: #1a1a2e; }
+        .tabela-itens .item-row .nome .badge { font-size: 0.55rem; background: #dbeafe; color: #1d4ed8; padding: 1px 8px; border-radius: 12px; margin-left: 6px; font-weight: 500; }
+        .tabela-itens .item-row .nome .badge-pre { background: #dbeafe; color: #1d4ed8; }
+        .tabela-itens .item-row .qtd { font-size: 0.75rem; color: #64748b; margin-right: 12px; }
+        .tabela-itens .item-row .preco { font-size: 0.82rem; font-weight: 600; color: #1a1a2e; }
+        .tabela-itens .item-row .preco-pre { color: #1d4ed8; }
+        .tabela-itens .subtotal-row { display: flex; justify-content: flex-end; padding: 10px 0 6px; border-top: 1px solid #e2e8f0; margin-top: 4px; }
+        .tabela-itens .subtotal-row span { font-size: 0.82rem; color: #64748b; }
+        .tabela-itens .subtotal-row .valor { font-weight: 500; color: #1a1a2e; min-width: 100px; text-align: right; }
+        .totais { background: #f8fafc; border-radius: 12px; padding: 16px 20px; margin-bottom: 20px; }
+        .totais .total-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 0.82rem; }
+        .totais .total-row .label { color: #64748b; }
+        .totais .total-row .valor { font-weight: 500; }
+        .totais .total-row.destaque { padding-top: 10px; margin-top: 6px; border-top: 2px solid #e2e8f0; font-size: 1rem; }
+        .totais .total-row.destaque .label { font-weight: 700; color: #1a1a2e; }
+        .totais .total-row.destaque .valor { font-weight: 800; color: #2199EF; }
+        .totais .total-row .desconto-text { color: #10b981; }
+        .totais .total-row .total-original { text-decoration: line-through; color: #94a3b8; font-weight: 400; }
+        .totais .gorjeta-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px dashed #fcd34d; margin-bottom: 6px; font-size: 0.82rem; }
+        .totais .gorjeta-row .label { color: #d97706; font-weight: 600; }
+        .totais .gorjeta-row .valor { color: #d97706; font-weight: 700; }
+        .footer { text-align: center; padding-top: 20px; border-top: 2px solid #e2e8f0; margin-top: 10px; }
+        .footer .agradecimento { font-size: 0.85rem; color: #1a1a2e; font-weight: 500; }
+        .footer .agradecimento i { color: #ef4444; }
+        .footer .info-rodape { font-size: 0.65rem; color: #94a3b8; margin-top: 6px; }
+        .footer .info-rodape span { margin: 0 6px; }
+        .observacoes { background: #fffbeb; border-radius: 8px; padding: 12px 16px; margin-top: 16px; border-left: 3px solid #f59e0b; }
+        .observacoes .label { font-size: 0.6rem; text-transform: uppercase; color: #92400e; font-weight: 600; letter-spacing: 0.5px; }
+        .observacoes .texto { font-size: 0.8rem; color: #78350f; margin-top: 2px; }
+        @media print { body { padding: 20px; background: #ffffff; } .no-print { display: none !important; } .documento { box-shadow: none; border: none; } .header { border-bottom-width: 2px; } }
+        @media (max-width: 600px) { body { padding: 20px 15px; } .info-grid { grid-template-columns: 1fr; gap: 10px; } .titulo-comanda { flex-direction: column; align-items: flex-start; } .tabela-itens .item-row { flex-wrap: wrap; gap: 4px 0; } .tabela-itens .item-row .nome { width: 100%; } .tabela-itens .item-row .preco { margin-left: auto; } .totais .total-row.destaque { font-size: 0.9rem; } }
+        .btn-print { display: inline-flex; align-items: center; gap: 8px; padding: 10px 24px; background: #2199EF; color: white; border: none; border-radius: 10px; font-weight: 600; font-size: 0.85rem; cursor: pointer; transition: background 0.2s; margin-top: 20px; }
+        .btn-print:hover { background: #1a7fcc; }
+        .btn-print i { font-size: 0.9rem; }
+        .acoes { text-align: center; padding-top: 10px; }
+    </style>
+</head>
+<body>
+    <div class="documento" id="documentoImprimir">
+        <div class="header">
+            <div class="logo-text">Studio <span>Nogueira</span></div>
+            <div class="subtitulo">💈 Mais de 10 anos transformando estilos</div>
+            <div class="tipo-documento">📄 Documento Não Fiscal - Comanda de Atendimento</div>
+        </div>
+
+        <div class="titulo-comanda">
+            <div class="numero"><i class="fa-solid fa-receipt"></i> Comanda #${numeroComanda}</div>
+            <div class="status status-${comanda.status === 'finalizada' ? 'finalizada' : (comanda.status === 'aberta' ? 'aberta' : (comanda.status === 'ausente' ? 'ausente' : (comanda.status === 'cancelado' ? 'cancelado' : 'pendente')))}">${statusTexto}</div>
+        </div>
+
+        <div class="info-grid">
+            <div class="info-item">
+                <span class="label"><i class="fa-regular fa-user"></i> Cliente</span>
+                <span class="value"><i class="fa-regular fa-user"></i> ${escapeHtml(clienteNome)}</span>
+                ${clienteTelefone ? `<span style="font-size:0.75rem;color:#64748b;margin-top:2px;"><i class="fa-solid fa-phone"></i> ${escapeHtml(clienteTelefone)}</span>` : ''}
+            </div>
+            <div class="info-item">
+                <span class="label"><i class="fa-regular fa-calendar"></i> Data/Hora</span>
+                <span class="value"><i class="fa-regular fa-calendar"></i> ${dataFormatada} às ${horaFormatada}</span>
+            </div>
+            <div class="info-item">
+                <span class="label"><i class="fa-solid fa-user-md"></i> Barbeiro</span>
+                <span class="value"><i class="fa-solid fa-user-md"></i> ${escapeHtml(barbeiroNome)}</span>
+            </div>
+            <div class="info-item">
+                <span class="label"><i class="fa-solid fa-credit-card"></i> Pagamento</span>
+                <span class="value">${metodoIcon} ${metodoNome}${parcelasTexto}</span>
+            </div>
+        </div>
+
+        ${(comanda.gorjeta || 0) > 0 ? `
+        <div style="background: #fffbeb; border-radius: 8px; padding: 10px 16px; margin-bottom: 16px; border: 1px solid #fcd34d;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                <span style="display: flex; align-items: center; gap: 8px; color: #d97706; font-weight: 600; font-size: 0.82rem;">
+                    <i class="fa-solid fa-hand-holding-heart"></i> Gorjeta
+                </span>
+                <span style="color: #d97706; font-weight: 700; font-size: 0.9rem;">
+                    ${formatarMoeda(comanda.gorjeta)}
+                    ${comanda.gorjetaProfissionalNome ? ` → ${escapeHtml(comanda.gorjetaProfissionalNome)}` : ''}
+                </span>
+            </div>
+            <div style="font-size:0.6rem;color:#92400e;margin-top:4px;">
+                <i class="fa-solid fa-info-circle"></i> Registro documental - gorjeta não integrada ao sistema financeiro
+            </div>
+        </div>
+        ` : ''}
+
+        <div class="tabela-itens">
+            <div class="titulo-secao">📋 Itens da Comanda</div>
+            ${itensHTML}
+        </div>
+
+        <div class="totais">
+            ${descontoValor > 0 ? `
+                <div class="total-row">
+                    <span class="label">Subtotal</span>
+                    <span class="valor">${formatarMoeda(subtotal)}</span>
+                </div>
+                <div class="total-row">
+                    <span class="label desconto-text">Desconto ${comanda.desconto?.tipo === 'percentual' ? `(${comanda.desconto?.valor}%)` : '(fixo)'}</span>
+                    <span class="valor desconto-text">- ${formatarMoeda(descontoValor)}</span>
+                </div>
+                <div class="total-row destaque">
+                    <span class="label">Total</span>
+                    <span class="valor">${formatarMoeda(totalFinal)}</span>
+                </div>
+            ` : `
+                <div class="total-row destaque">
+                    <span class="label">Total</span>
+                    <span class="valor">${formatarMoeda(totalFinal)}</span>
+                </div>
+            `}
+        </div>
+
+        ${comanda.observacoes ? `
+        <div class="observacoes">
+            <div class="label"><i class="fa-regular fa-note-sticky"></i> Observações</div>
+            <div class="texto">${escapeHtml(comanda.observacoes)}</div>
+        </div>
+        ` : ''}
+
+        <div class="footer">
+            <div class="agradecimento"><i class="fa-regular fa-heart"></i> Agradecemos pela sua visita!</div>
+            <div class="info-rodape">
+                <span>📅 ${dataFormatada} às ${horaFormatada}</span>
+                <span>|</span>
+                <span>🧾 Comanda #${numeroComanda}</span>
+                <span>|</span>
+                <span>📄 Documento Não Fiscal</span>
+            </div>
+            <div class="info-rodape" style="font-size:0.55rem;color:#cbd5e1;margin-top:2px;">
+                Este documento não tem validade fiscal e serve apenas como comprovante de atendimento.
+            </div>
+        </div>
+
+        <div class="acoes no-print">
+            <button class="btn-print" onclick="window.print()">
+                <i class="fa-solid fa-print"></i> Imprimir / Salvar PDF
+            </button>
+        </div>
+    </div>
+
+    <script>
+        window.onafterprint = function() {};
+    </script>
+</body>
+</html>
+        `;
+
+        const janelaImpressao = window.open('', '_blank', 'width=800,height=900,scrollbars=yes,resizable=yes');
+        if (!janelaImpressao) {
+            mostrarToast('Por favor, permita pop-ups para imprimir o documento', 'erro');
+            return;
+        }
+
+        janelaImpressao.document.write(conteudoHTML);
+        janelaImpressao.document.close();
+
+        const linkFA = janelaImpressao.document.createElement('link');
+        linkFA.rel = 'stylesheet';
+        linkFA.href = 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css';
+        janelaImpressao.document.head.appendChild(linkFA);
+
+        const linkFont = janelaImpressao.document.createElement('link');
+        linkFont.rel = 'stylesheet';
+        linkFont.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap';
+        janelaImpressao.document.head.appendChild(linkFont);
+
+        janelaImpressao.focus();
+        mostrarToast('📄 Documento gerado com sucesso!', 'sucesso');
+        console.log("✅ Documento não fiscal gerado para comanda #" + numeroComanda);
+
+    }).catch(err => {
+        console.error("Erro ao gerar documento:", err);
+        mostrarToast("Erro ao gerar documento: " + err.message, 'erro');
+    });
+}
+
+window.imprimirDocumentoNaoFiscal = imprimirDocumentoNaoFiscal;
+
+// ==================== CONFIGURAÇÃO DO BOTÃO DE IMPRESSÃO ====================
+
+function configurarBotaoImpressao() {
+    const btnImprimirComanda = document.getElementById("btnImprimirComanda");
+    if (btnImprimirComanda) {
+        const novoBtnImprimir = btnImprimirComanda.cloneNode(true);
+        btnImprimirComanda.parentNode.replaceChild(novoBtnImprimir, btnImprimirComanda);
+        novoBtnImprimir.addEventListener("click", function() {
+            const modalDetalhes = document.getElementById("modalDetalhesComanda");
+            if (modalDetalhes && modalDetalhes.classList.contains("active")) {
+                const cardAtivo = document.querySelector('.comanda-card[data-id]');
+                if (cardAtivo) {
+                    const comandaId = cardAtivo.dataset.id;
+                    imprimirDocumentoNaoFiscal(comandaId);
+                    return;
+                }
+            }
+            if (comandaEditando && comandaEditando.id) {
+                imprimirDocumentoNaoFiscal(comandaEditando.id);
+                return;
+            }
+            mostrarToast('Selecione uma comanda para imprimir', 'erro');
+        });
+    }
+}
+
+// ==================== CONFIGURAÇÃO DE EVENTOS ====================
+
 function configurarEventosDesconto() {
     const btnAplicarDescontoRapido = document.getElementById("btnAplicarDescontoRapido");
     const btnProgramasDesconto = document.getElementById("btnProgramasDesconto");
@@ -3092,7 +3445,7 @@ function configurarEventosDesconto() {
         if (e.target === modalReativarCancelada) fecharModalReativarComandaCancelada();
     });
     document.addEventListener("keydown", (e) => { if (e.key === "Escape") { fecharModalComanda(); fecharModalDetalhes(); fecharModalEditar(); fecharModalProgramas(); fecharModalJustificarAusencia(); fecharModalReativarComanda(); fecharModalJustificarCancelamento(); fecharModalReativarComandaCancelada(); } });
-    const btnImprimirComanda = document.getElementById("btnImprimirComanda"); if (btnImprimirComanda) btnImprimirComanda.addEventListener("click", () => window.print());
+    configurarBotaoImpressao();
 }
 
 function setupEventListeners() {
@@ -3302,7 +3655,6 @@ window.diagnosticarHorario = async function(data, horario, profissionalId = null
             console.log(`      Motivo Cancelamento: ${agendamento.motivoCancelamento || 'N/A'}`);
             console.log("   ---");
             
-            // Verificar se o horário está ocupado (não liberado e status ativo)
             if (!liberado && !["cancelado", "ausente"].includes(status)) {
                 horarioOcupado = true;
             }
@@ -3624,9 +3976,10 @@ window.corrigirNumerosComandas = corrigirNumerosComandasAutomatico;
 window.dispararAtualizacaoAgenda = dispararAtualizacaoAgenda;
 window.liberarHorarioAgenda = liberarHorarioAgenda;
 
-console.log("comanda.js carregado com sucesso! Versão com VISUALIZAÇÃO DE GORJETA");
+console.log("comanda.js carregado com sucesso! Versão com VISUALIZAÇÃO DE GORJETA E IMPRESSÃO DE DOCUMENTO NÃO FISCAL");
 console.log("📋 Funções de diagnóstico disponíveis:");
 console.log("   await diagnosticarHorario('2026-06-15', '08:20')");
 console.log("   await corrigirHorarioLiberado('2026-06-15', '08:20')");
 console.log("   await listarAgendamentosPorData('2026-06-15')");
 console.log("   await corrigirTodosHorariosDia('2026-06-15')");
+console.log("🖨️ Função de impressão: imprimirDocumentoNaoFiscal('comandaId')");
