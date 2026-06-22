@@ -1,4 +1,4 @@
-/* pagamentos.css - Versão com cards menores e mais compactos */
+/* pagamentos.css - Versão com suporte a gorjetas */
 
 .stats-pagamentos {
     display: grid;
@@ -59,6 +59,13 @@
     box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3);
 }
 
+/* ESTILO PARA GORJETA */
+.stat-icon.bg-gold {
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    color: white;
+    box-shadow: 0 4px 15px rgba(245, 158, 11, 0.3);
+}
+
 .stat-icon.bg-blue {
     background: linear-gradient(135deg, #2199EF, #1a7fcc);
     color: white;
@@ -96,6 +103,38 @@
     text-transform: uppercase;
     letter-spacing: 0.5px;
     font-weight: 500;
+}
+
+/* ESTILO PARA ROW DE GORJETA */
+.gorjeta-row {
+    background: rgba(245, 158, 11, 0.05);
+    border-radius: 12px;
+    padding: 12px;
+    border: 1px dashed rgba(245, 158, 11, 0.3);
+    margin-bottom: 14px;
+}
+
+.gorjeta-row .form-group label i {
+    color: #f59e0b !important;
+}
+
+/* BOTÃO DE GORJETA NO CARD */
+.btn-add-gorjeta {
+    flex: 1;
+    padding: 8px;
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    border: none;
+    border-radius: 8px;
+    color: white;
+    cursor: pointer;
+    font-size: 0.7rem;
+    font-weight: 600;
+    transition: all 0.2s;
+}
+
+.btn-add-gorjeta:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 5px 15px rgba(245, 158, 11, 0.4);
 }
 
 .topbar-actions .btn-primary {
@@ -250,7 +289,7 @@
     color: #2199EF;
 }
 
-/* Cards de pagamento - VERSÃO MAIS COMPACTA */
+/* Cards de pagamento */
 .pagamentos-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
@@ -387,7 +426,8 @@
     gap: 10px;
 }
 
-.btn-edit-pagamento, .btn-delete-pagamento {
+.btn-edit-pagamento,
+.btn-delete-pagamento {
     flex: 1;
     padding: 6px 12px;
     border: none;
@@ -540,7 +580,9 @@
     font-size: 1rem;
 }
 
-.modal-close, .modal-close-excluir {
+.modal-close,
+.modal-close-excluir,
+.modal-close-gorjeta {
     background: none;
     border: none;
     font-size: 1.3rem;
@@ -555,7 +597,9 @@
     border-radius: 8px;
 }
 
-.modal-close:hover, .modal-close-excluir:hover {
+.modal-close:hover,
+.modal-close-excluir:hover,
+.modal-close-gorjeta:hover {
     background: rgba(239, 68, 68, 0.15);
     color: #ef4444;
     transform: rotate(90deg);
@@ -649,7 +693,9 @@
     border-top: 1px solid var(--border-color);
 }
 
-.btn-cancel, .btn-cancel-excluir {
+.btn-cancel,
+.btn-cancel-excluir,
+.btn-cancel-gorjeta {
     padding: 8px 20px;
     background: var(--bg-dark);
     border: 1px solid var(--border-color);
@@ -661,7 +707,9 @@
     transition: all 0.2s;
 }
 
-.btn-cancel:hover, .btn-cancel-excluir:hover {
+.btn-cancel:hover,
+.btn-cancel-excluir:hover,
+.btn-cancel-gorjeta:hover {
     background: rgba(239, 68, 68, 0.1);
     border-color: #ef4444;
     color: #ef4444;
@@ -774,7 +822,7 @@
         grid-template-columns: repeat(2, 1fr);
         gap: 16px;
     }
-    
+
     .pagamentos-grid {
         grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
         gap: 14px;
@@ -786,29 +834,29 @@
         grid-template-columns: 1fr;
         gap: 12px;
     }
-    
+
     .stat-value {
         font-size: 1.2rem;
     }
-    
+
     .stat-icon {
         width: 42px;
         height: 42px;
         font-size: 1.1rem;
     }
-    
+
     .filter-pagamentos {
         flex-direction: column;
         align-items: stretch;
         gap: 12px;
         padding: 16px;
     }
-    
+
     .filter-group {
         min-width: auto;
         width: 100%;
     }
-    
+
     .filter-input,
     .filter-select,
     .filter-input[type="date"] {
@@ -817,69 +865,74 @@
         padding: 10px 14px 10px 38px;
         font-size: 14px;
     }
-    
+
     .btn-primary-small,
     .btn-ghost-small {
         width: 100%;
         justify-content: center;
         white-space: normal;
     }
-    
+
     .form-row {
         grid-template-columns: 1fr;
         gap: 0;
     }
-    
+
     .pagamentos-grid {
         grid-template-columns: 1fr;
         gap: 12px;
     }
-    
+
     .pagamento-actions {
         flex-wrap: wrap;
     }
-    
-    .btn-edit-pagamento, .btn-delete-pagamento {
+
+    .btn-edit-pagamento,
+    .btn-delete-pagamento {
         flex: 1;
         min-width: calc(50% - 5px);
     }
-    
+
     .toast {
         bottom: 20px;
         right: 20px;
         left: 20px;
         transform: translateY(100px);
     }
-    
+
     .toast.show {
         transform: translateY(0);
     }
-    
+
     .topbar-actions {
         flex-direction: column;
         width: 100%;
     }
-    
+
     .topbar-actions .btn-primary {
         width: 100%;
         justify-content: center;
     }
-    
+
     .modal-content {
         max-height: 80vh;
         border-radius: 20px;
     }
-    
+
     .modal-header {
         padding: 14px 16px;
     }
-    
+
     .modal-header h2 {
         font-size: 1rem;
     }
-    
+
     #formPagamento {
         padding: 16px;
+    }
+
+    .gorjeta-row {
+        padding: 8px;
     }
 }
 
@@ -887,30 +940,31 @@
     .stat-value {
         font-size: 1.1rem;
     }
-    
+
     .stat-icon {
         width: 38px;
         height: 38px;
         font-size: 1rem;
     }
-    
+
     .pagamento-valor .valor {
         font-size: 1rem;
     }
-    
+
     .pagamento-header {
         padding: 12px;
     }
-    
+
     .pagamento-body {
         padding: 12px;
     }
-    
+
     .pagamento-actions {
         padding: 10px 12px;
     }
-    
-    .btn-edit-pagamento, .btn-delete-pagamento {
+
+    .btn-edit-pagamento,
+    .btn-delete-pagamento {
         padding: 5px 10px;
         font-size: 0.65rem;
     }

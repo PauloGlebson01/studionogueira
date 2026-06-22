@@ -1,4 +1,4 @@
-// pagamentos.js - Versão DEFINITIVA (APENAS comandas, sem duplicação)
+// pagamentos.js - Versão com GORJETAS e EDIÇÃO
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { 
     getFirestore, 
@@ -7,13 +7,13 @@ import {
     query, 
     orderBy,
     doc,
+    addDoc,
     updateDoc,
     Timestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
-//BANCO DE DADOS
-
+//CONFIGURAÇÕES DE DADOS
 const firebaseConfig = {
     apiKey: "AIzaSyC5xXm9T2nzh6xxZ5-zrMHfCNdqQOG8SZI",
     authDomain: "studio-nogueira-e07bb.firebaseapp.com",
@@ -28,7 +28,7 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
 
-// Estado global - APENAS COMANDAS (fonte única)
+// Estado global
 let comandas = [];
 let clientes = [];
 let servicos = [];
@@ -49,12 +49,24 @@ const btnLimparFiltros = document.getElementById('btnLimparFiltros');
 const btnNovoPagamento = document.getElementById('btnNovoPagamento');
 const modalPagamento = document.getElementById('modalPagamento');
 const modalExcluir = document.getElementById('modalExcluir');
+const modalGorjeta = document.getElementById('modalGorjeta');
 const formPagamento = document.getElementById('formPagamento');
+const formGorjeta = document.getElementById('formGorjeta');
 const modalTitle = document.getElementById('modalTitle');
 const pagamentoId = document.getElementById('pagamentoId');
 const pagamentoCliente = document.getElementById('pagamentoCliente');
 const pagamentoServico = document.getElementById('pagamentoServico');
-const pagamentoProfissional = document.getElementById('pagamentoProfissional');
+const pagamentoValor = document.getElementById('pagamentoValor');
+const pagamentoMetodo = document.getElementById('pagamentoMetodo');
+const pagamentoData = document.getElementById('pagamentoData');
+const pagamentoStatus = document.getElementById('pagamentoStatus');
+const pagamentoObservacao = document.getElementById('pagamentoObservacao');
+const gorjetaValor = document.getElementById('gorjetaValor');
+const gorjetaProfissional = document.getElementById('gorjetaProfissional');
+const gorjetaComandaId = document.getElementById('gorjetaComandaId');
+const gorjetaClienteNome = document.getElementById('gorjetaClienteNome');
+const gorjetaValorEditar = document.getElementById('gorjetaValorEditar');
+const gorjetaProfissionalEditar = document.getElementById('gorjetaProfissionalEditar');
 const btnConfirmarExcluir = document.getElementById('confirmarExcluir');
 const toast = document.getElementById('toast');
 const toastMsg = document.getElementById('toastMsg');
@@ -67,6 +79,7 @@ let filtrosAtivos = {
 };
 
 let pagamentoParaExcluir = null;
+let comandaParaGorjeta = null;
 
 // ==================== FUNÇÕES UTILITÁRIAS ====================
 
@@ -172,7 +185,7 @@ async function carregarDadosApoio() {
     console.log("🔄 Carregando dados de apoio...");
     
     try {
-        const clientesSnap = await new Promise((resolve) => {
+        await new Promise((resolve) => {
             const unsubscribe = onSnapshot(collection(db, "clientes"), (snapshot) => {
                 clientes = [];
                 snapshot.forEach(doc => {
@@ -249,10 +262,19 @@ function popularSelects() {
         });
     }
     
-    if (pagamentoProfissional) {
-        pagamentoProfissional.innerHTML = '<option value="">Selecione um profissional</option>';
+    // POPULAR SELECT DE PROFISSIONAIS PARA GORJETA (modal principal)
+    if (gorjetaProfissional) {
+        gorjetaProfissional.innerHTML = '<option value="">Selecione (opcional)</option>';
         profissionais.forEach(prof => {
-            pagamentoProfissional.innerHTML += `<option value="${prof.id}">${escapeHtml(prof.nome)}</option>`;
+            gorjetaProfissional.innerHTML += `<option value="${prof.id}">${escapeHtml(prof.nome)}</option>`;
+        });
+    }
+    
+    // POPULAR SELECT DE PROFISSIONAIS PARA GORJETA (modal de edição)
+    if (gorjetaProfissionalEditar) {
+        gorjetaProfissionalEditar.innerHTML = '<option value="">Selecione (opcional)</option>';
+        profissionais.forEach(prof => {
+            gorjetaProfissionalEditar.innerHTML += `<option value="${prof.id}">${escapeHtml(prof.nome)}</option>`;
         });
     }
 }
@@ -279,6 +301,10 @@ function carregarComandas() {
             
             const comanda = doc.data();
             const valor = calcularValorComanda(comanda);
+            
+            // PEGAR GORJETA DA COMANDA
+            const gorjeta = comanda.gorjeta || 0;
+            const gorjetaProfissionalId = comanda.gorjetaProfissional || null;
             
             let pagamentoStatus = "pendente";
             let metodo = comanda.formaPagamento || "pendente";
@@ -311,6 +337,13 @@ function carregarComandas() {
             if (comanda.barbeiroId) {
                 const profissional = profissionais.find(p => p.id === comanda.barbeiroId);
                 if (profissional) profissionalNome = profissional.nome;
+            }
+            
+            // BUSCAR NOME DO PROFISSIONAL DA GORJETA
+            let gorjetaProfissionalNome = null;
+            if (gorjetaProfissionalId) {
+                const prof = profissionais.find(p => p.id === gorjetaProfissionalId);
+                if (prof) gorjetaProfissionalNome = prof.nome;
             }
             
             const parcelasTexto = comanda.parcelas && comanda.parcelas > 1 ? ` (${comanda.parcelas}x)` : '';
@@ -355,6 +388,10 @@ function carregarComandas() {
                 profissionalId: comanda.barbeiroId,
                 profissionalNome: profissionalNome || "Não informado",
                 valor: valor,
+                // CAMPOS DE GORJETA
+                gorjeta: gorjeta,
+                gorjetaProfissionalId: gorjetaProfissionalId,
+                gorjetaProfissionalNome: gorjetaProfissionalNome,
                 metodo: metodo,
                 metodoNome: `${metodoIcon} ${metodoNome}${parcelasTexto}`,
                 data: dataStr,
@@ -373,8 +410,7 @@ function carregarComandas() {
         
         console.log(`✅ Comandas processadas: ${comandas.length}`);
         console.log(`   - Finalizadas (Pago): ${comandas.filter(c => c.status === "pago").length}`);
-        console.log(`   - Abertas (Pendente): ${comandas.filter(c => c.status === "pendente" && c.statusComanda === "aberta").length}`);
-        console.log(`   - Ausentes: ${comandas.filter(c => c.statusComanda === "ausente").length}`);
+        console.log(`   - Com gorjeta: ${comandas.filter(c => c.gorjeta > 0).length}`);
         
         renderizarPagamentos();
         atualizarEstatisticas();
@@ -460,6 +496,14 @@ function renderizarPagamentos() {
             </span>
         `;
         
+        // BADGE DE GORJETA
+        const gorjetaBadge = comanda.gorjeta > 0 ? `
+            <span style="background: rgba(245, 158, 11, 0.2); padding: 4px 10px; border-radius: 20px; font-size: 0.7rem; font-weight: 600; color: #f59e0b;">
+                <i class="fa-solid fa-hand-holding-heart"></i> Gorjeta: ${formatarMoeda(comanda.gorjeta)}
+                ${comanda.gorjetaProfissionalNome ? ` (${escapeHtml(comanda.gorjetaProfissionalNome)})` : ''}
+            </span>
+        ` : '';
+        
         // ==================== CONSTRUIR LISTA COMPLETA DE ITENS ====================
         let itensHtml = '';
         
@@ -544,6 +588,7 @@ function renderizarPagamentos() {
                                 <i class="fa-solid fa-user"></i> ${escapeHtml(comanda.clienteNome)}
                             </h3>
                             ${comandaBadge}
+                            ${gorjetaBadge}
                         </div>
                         <div style="display: flex; flex-wrap: wrap; gap: 12px; font-size: 0.7rem; color: var(--text-muted);">
                             <span><i class="fa-solid fa-user-md"></i> ${escapeHtml(comanda.profissionalNome)}</span>
@@ -563,6 +608,12 @@ function renderizarPagamentos() {
                         <span class="label" style="color: var(--text-muted); font-size: 0.7rem;"><i class="fa-solid fa-credit-card"></i> Método</span>
                         <span class="value" style="font-size: 0.7rem;">${comanda.metodoNome}</span>
                     </div>
+                    ${comanda.gorjeta > 0 ? `
+                        <div class="pagamento-detalhe" style="display: flex; justify-content: space-between; margin-top: 6px; background: rgba(245, 158, 11, 0.1); padding: 6px 10px; border-radius: 8px;">
+                            <span class="label" style="color: #f59e0b; font-size: 0.7rem;"><i class="fa-solid fa-hand-holding-heart"></i> Gorjeta</span>
+                            <span class="value" style="font-size: 0.7rem; color: #f59e0b; font-weight: 600;">${formatarMoeda(comanda.gorjeta)} ${comanda.gorjetaProfissionalNome ? `→ ${escapeHtml(comanda.gorjetaProfissionalNome)}` : ''}</span>
+                        </div>
+                    ` : ''}
                     <div class="pagamento-valor" style="margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--border-color); text-align: right;">
                         <span class="valor" style="font-size: 1.2rem; font-weight: 800; color: #2199EF;">${formatarMoeda(comanda.valor)}</span>
                     </div>
@@ -573,7 +624,12 @@ function renderizarPagamentos() {
                     ` : ''}
                 </div>
                 <div class="pagamento-actions" style="display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border-color); background: rgba(0,0,0,0.2);">
-                    <button class="btn-view-comanda" data-comanda-id="${comanda.id}" style="flex: 1; padding: 8px; background: linear-gradient(135deg, #f59e0b, #d97706); border: none; border-radius: 8px; color: white; cursor: pointer; font-size: 0.7rem; font-weight: 600;">
+                    ${!isFinalizada && comanda.statusComanda !== "cancelado" ? `
+                        <button class="btn-add-gorjeta" data-comanda-id="${comanda.id}" style="flex: 1; padding: 8px; background: linear-gradient(135deg, #f59e0b, #d97706); border: none; border-radius: 8px; color: white; cursor: pointer; font-size: 0.7rem; font-weight: 600;">
+                            <i class="fa-solid fa-hand-holding-heart"></i> ${comanda.gorjeta > 0 ? 'Editar Gorjeta' : 'Adicionar Gorjeta'}
+                        </button>
+                    ` : ''}
+                    <button class="btn-view-comanda" data-comanda-id="${comanda.id}" style="flex: 1; padding: 8px; background: linear-gradient(135deg, #2199EF, #1a7fcc); border: none; border-radius: 8px; color: white; cursor: pointer; font-size: 0.7rem; font-weight: 600;">
                         <i class="fa-solid fa-receipt"></i> Acessar Comanda
                     </button>
                     ${!isFinalizada && comanda.statusComanda !== "cancelado" ? `
@@ -586,6 +642,7 @@ function renderizarPagamentos() {
         `;
     }).join('');
     
+    // Eventos para botão de visualizar comanda
     document.querySelectorAll('.btn-view-comanda').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -596,6 +653,7 @@ function renderizarPagamentos() {
         });
     });
     
+    // Eventos para botão de finalizar comanda
     document.querySelectorAll('.btn-finalizar-comanda').forEach(btn => {
         btn.addEventListener('click', async (e) => {
             e.stopPropagation();
@@ -605,15 +663,30 @@ function renderizarPagamentos() {
             }
         });
     });
+    
+    // Eventos para botão de gorjeta
+    document.querySelectorAll('.btn-add-gorjeta').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const comandaId = btn.getAttribute('data-comanda-id');
+            if (comandaId) {
+                abrirModalGorjeta(comandaId);
+            }
+        });
+    });
 }
+
+// ==================== ESTATÍSTICAS COM GORJETA ====================
 
 function atualizarEstatisticas() {
     let totalRecebido = 0;
     let totalPendente = 0;
+    let totalGorjetas = 0;
     
     comandas.forEach(c => {
         if (c.status === "pago") {
             totalRecebido += c.valor;
+            totalGorjetas += (c.gorjeta || 0);
         } else if (c.status === "pendente") {
             totalPendente += c.valor;
         }
@@ -622,28 +695,31 @@ function atualizarEstatisticas() {
     const totalRecebidoEl = document.getElementById('totalRecebido');
     const totalPendenteEl = document.getElementById('totalPendente');
     const totalTransacoesEl = document.getElementById('totalTransacoes');
+    const totalGorjetasEl = document.getElementById('totalGorjetas');
     
     if (totalRecebidoEl) totalRecebidoEl.textContent = formatarMoeda(totalRecebido);
     if (totalPendenteEl) totalPendenteEl.textContent = formatarMoeda(totalPendente);
     if (totalTransacoesEl) totalTransacoesEl.textContent = comandas.length;
+    if (totalGorjetasEl) totalGorjetasEl.textContent = formatarMoeda(totalGorjetas);
 }
 
 // ==================== PAGAMENTOS MANUAIS ====================
 
 async function salvarPagamentoManual(dados) {
     try {
-        const profissionalId = document.getElementById('pagamentoProfissional')?.value || null;
-        
         const pagamentoData = {
-            clienteId: dados.clienteId,
-            servicoId: dados.servicoId,
-            profissionalId: profissionalId,
+            clienteId: dados.clienteId || null,
+            servicoId: dados.servicoId || null,
+            profissionalId: dados.profissionalId || null,
             valor: Number(dados.valor),
             metodo: dados.metodo,
             data: dados.data,
             status: dados.status,
             observacao: dados.observacao || '',
             parcelas: dados.parcelas || 1,
+            // CAMPOS DE GORJETA
+            gorjeta: Number(dados.gorjeta) || 0,
+            gorjetaProfissional: dados.gorjetaProfissional || null,
             createdAt: Timestamp.now(),
             atualizadoEm: Timestamp.now(),
             isManual: true
@@ -673,11 +749,86 @@ function abrirModalPagamentoManual() {
     const metodoInput = document.getElementById('pagamentoMetodo');
     if (metodoInput) metodoInput.value = 'dinheiro';
     
+    // RESETAR CAMPOS DE GORJETA
+    const gorjetaInput = document.getElementById('gorjetaValor');
+    if (gorjetaInput) gorjetaInput.value = 0;
+    
+    const gorjetaProfInput = document.getElementById('gorjetaProfissional');
+    if (gorjetaProfInput) gorjetaProfInput.value = '';
+    
     if (modalPagamento) modalPagamento.classList.add('active');
 }
 
 function fecharModalPagamento() {
     if (modalPagamento) modalPagamento.classList.remove('active');
+}
+
+// ==================== FUNÇÕES DE GORJETA (EDIÇÃO) ====================
+
+function abrirModalGorjeta(comandaId) {
+    const comanda = comandas.find(c => c.id === comandaId);
+    if (!comanda) {
+        mostrarToast("Comanda não encontrada.", "erro");
+        return;
+    }
+    
+    comandaParaGorjeta = comanda;
+    gorjetaComandaId.value = comandaId;
+    gorjetaClienteNome.value = comanda.clienteNome || 'Cliente';
+    gorjetaValorEditar.value = comanda.gorjeta > 0 ? comanda.gorjeta : '';
+    gorjetaProfissionalEditar.value = comanda.gorjetaProfissionalId || '';
+    
+    if (modalGorjeta) modalGorjeta.classList.add('active');
+}
+
+function fecharModalGorjeta() {
+    if (modalGorjeta) modalGorjeta.classList.remove('active');
+    comandaParaGorjeta = null;
+}
+
+async function salvarGorjeta(e) {
+    e.preventDefault();
+    
+    if (!comandaParaGorjeta) {
+        mostrarToast("Nenhuma comanda selecionada.", "erro");
+        return;
+    }
+    
+    const valor = Number(gorjetaValorEditar.value);
+    if (!valor || valor <= 0) {
+        mostrarToast("Informe um valor válido para a gorjeta.", "erro");
+        return;
+    }
+    
+    const profissionalId = gorjetaProfissionalEditar.value || null;
+    
+    try {
+        // Atualizar a comanda no Firestore
+        const comandaRef = doc(db, "comandas", comandaParaGorjeta.id);
+        await updateDoc(comandaRef, {
+            gorjeta: valor,
+            gorjetaProfissional: profissionalId,
+            atualizadoEm: Timestamp.now()
+        });
+        
+        const nomeProfissional = profissionalId ? 
+            profissionais.find(p => p.id === profissionalId)?.nome : null;
+        
+        mostrarToast(`Gorjeta de ${formatarMoeda(valor)} adicionada com sucesso!`, 'sucesso');
+        fecharModalGorjeta();
+        
+        // Atualizar a lista local
+        comandaParaGorjeta.gorjeta = valor;
+        comandaParaGorjeta.gorjetaProfissionalId = profissionalId;
+        comandaParaGorjeta.gorjetaProfissionalNome = nomeProfissional || null;
+        
+        renderizarPagamentos();
+        atualizarEstatisticas();
+        
+    } catch (error) {
+        console.error("Erro ao salvar gorjeta:", error);
+        mostrarToast("Erro ao salvar gorjeta.", "erro");
+    }
 }
 
 // ==================== FILTROS ====================
@@ -722,6 +873,10 @@ function setupEventListeners() {
             const metodo = document.getElementById('pagamentoMetodo')?.value;
             const parcelas = document.getElementById('pagamentoParcelas')?.value;
             
+            // PEGAR DADOS DA GORJETA
+            const gorjeta = document.getElementById('gorjetaValor')?.value || 0;
+            const gorjetaProfissional = document.getElementById('gorjetaProfissional')?.value || null;
+            
             if (!clienteId) {
                 mostrarToast("Selecione um cliente.", "erro");
                 return;
@@ -742,17 +897,30 @@ function setupEventListeners() {
             const dados = {
                 clienteId: clienteId,
                 servicoId: servicoId,
+                profissionalId: document.getElementById('pagamentoProfissional')?.value || null,
                 valor: valor,
                 metodo: metodo,
                 data: document.getElementById('pagamentoData')?.value,
                 status: document.getElementById('pagamentoStatus')?.value,
                 observacao: document.getElementById('pagamentoObservacao')?.value,
-                parcelas: metodo === 'cartao_credito' ? (parcelas || 1) : 1
+                parcelas: metodo === 'cartao_credito' ? (parcelas || 1) : 1,
+                // ENVIAR DADOS DA GORJETA
+                gorjeta: gorjeta,
+                gorjetaProfissional: gorjetaProfissional
             };
             
             salvarPagamentoManual(dados);
         });
     }
+    
+    // Modal de Gorjeta
+    if (formGorjeta) {
+        formGorjeta.addEventListener('submit', salvarGorjeta);
+    }
+    
+    document.querySelectorAll('.modal-close-gorjeta, .btn-cancel-gorjeta').forEach(btn => {
+        btn.addEventListener('click', fecharModalGorjeta);
+    });
     
     if (btnFiltrar) {
         btnFiltrar.addEventListener('click', aplicarFiltros);
@@ -770,6 +938,7 @@ function setupEventListeners() {
     
     window.addEventListener('click', (e) => {
         if (e.target === modalPagamento) fecharModalPagamento();
+        if (e.target === modalGorjeta) fecharModalGorjeta();
     });
     
     const metodoPagamentoSelect = document.getElementById('pagamentoMetodo');
@@ -788,7 +957,7 @@ function setupEventListeners() {
 // ==================== INICIALIZAÇÃO ====================
 
 async function inicializar() {
-    console.log("🚀 Inicializando sistema de pagamentos (fonte única: comandas)...");
+    console.log("🚀 Inicializando sistema de pagamentos (com gorjetas)...");
     
     if (pagamentosGrid) {
         pagamentosGrid.innerHTML = `
@@ -802,7 +971,7 @@ async function inicializar() {
     carregarComandas();
     setupEventListeners();
     
-    console.log("✅ Sistema de pagamentos inicializado!");
+    console.log("✅ Sistema de pagamentos inicializado com gorjetas!");
 }
 
 onAuthStateChanged(auth, (user) => {
@@ -833,5 +1002,6 @@ window.debugPagamentos = () => {
     console.log("  - Finalizadas (Pago):", comandas.filter(c => c.status === "pago").length);
     console.log("  - Abertas (Pendente):", comandas.filter(c => c.status === "pendente" && c.statusComanda === "aberta").length);
     console.log("  - Ausentes:", comandas.filter(c => c.statusComanda === "ausente").length);
+    console.log("  - Com gorjeta:", comandas.filter(c => c.gorjeta > 0).length);
     return comandas;
 };

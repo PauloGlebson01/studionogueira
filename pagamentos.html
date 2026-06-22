@@ -142,21 +142,21 @@
                         </div>
                     </div>
                     <div class="stat-pagamento-card">
+                        <div class="stat-icon bg-gold">
+                            <i class="fa-solid fa-hand-holding-heart"></i>
+                        </div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="totalGorjetas">R$ 0,00</span>
+                            <span class="stat-label">Total em Gorjetas</span>
+                        </div>
+                    </div>
+                    <div class="stat-pagamento-card">
                         <div class="stat-icon bg-blue">
                             <i class="fa-solid fa-clock"></i>
                         </div>
                         <div class="stat-info">
                             <span class="stat-value" id="totalPendente">R$ 0,00</span>
                             <span class="stat-label">Pendentes</span>
-                        </div>
-                    </div>
-                    <div class="stat-pagamento-card">
-                        <div class="stat-icon bg-orange">
-                            <i class="fa-solid fa-chart-line"></i>
-                        </div>
-                        <div class="stat-info">
-                            <span class="stat-value" id="mediaDiaria">R$ 0,00</span>
-                            <span class="stat-label">Média Diária (30d)</span>
                         </div>
                     </div>
                     <div class="stat-pagamento-card">
@@ -215,6 +215,7 @@
         </main>
     </div>
 
+    <!-- MODAL PAGAMENTO COM GORJETA -->
     <div id="modalPagamento" class="modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -253,6 +254,22 @@
                         </select>
                     </div>
                 </div>
+                
+                <!-- CAMPOS DE GORJETA -->
+                <div class="form-row gorjeta-row">
+                    <div class="form-group">
+                        <label><i class="fa-solid fa-hand-holding-heart" style="color: #f59e0b;"></i> Gorjeta (opcional)</label>
+                        <input type="number" id="gorjetaValor" min="0" step="0.01" placeholder="0,00" value="0">
+                    </div>
+                    <div class="form-group">
+                        <label><i class="fa-solid fa-user-md"></i> Profissional para Gorjeta</label>
+                        <select id="gorjetaProfissional">
+                            <option value="">Selecione (opcional)</option>
+                        </select>
+                    </div>
+                </div>
+                <!-- FIM CAMPOS DE GORJETA -->
+                
                 <div class="form-row">
                     <div class="form-group">
                         <label><i class="fa-solid fa-calendar"></i> Data do Pagamento *</label>
@@ -275,6 +292,41 @@
                 <div class="form-actions">
                     <button type="button" class="btn-cancel">Cancelar</button>
                     <button type="submit" class="btn-save">Salvar Pagamento</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL DE GORJETA PARA EDIÇÃO -->
+    <div id="modalGorjeta" class="modal">
+        <div class="modal-content modal-small">
+            <div class="modal-header">
+                <h2><i class="fa-solid fa-hand-holding-heart" style="color: #f59e0b;"></i> Adicionar Gorjeta</h2>
+                <button class="modal-close-gorjeta">&times;</button>
+            </div>
+            <form id="formGorjeta">
+                <input type="hidden" id="gorjetaComandaId">
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label><i class="fa-solid fa-user"></i> Cliente</label>
+                        <input type="text" id="gorjetaClienteNome" readonly style="background: var(--bg-dark); color: var(--text-muted);">
+                    </div>
+                    <div class="form-group">
+                        <label><i class="fa-solid fa-hand-holding-heart" style="color: #f59e0b;"></i> Valor da Gorjeta *</label>
+                        <input type="number" id="gorjetaValorEditar" min="0" step="0.01" placeholder="0,00" required>
+                    </div>
+                    <div class="form-group">
+                        <label><i class="fa-solid fa-user-md"></i> Profissional</label>
+                        <select id="gorjetaProfissionalEditar">
+                            <option value="">Selecione (opcional)</option>
+                        </select>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn-cancel-gorjeta">Cancelar</button>
+                        <button type="submit" class="btn-save" style="background: linear-gradient(135deg, #f59e0b, #d97706);">
+                            <i class="fa-solid fa-hand-holding-heart"></i> Adicionar Gorjeta
+                        </button>
+                    </div>
                 </div>
             </form>
         </div>
@@ -304,10 +356,8 @@
     </div>
 
     <script type="module" src="pagamentos.js"></script>
-    <!-- Adicionar antes do fechamento do body -->
-<script type="module" src="floating-caixa.js"></script>
-<!-- Adicione após os outros CSS -->
-<link rel="stylesheet" href="floating-caixa.css">
+    <script type="module" src="floating-caixa.js"></script>
+    <link rel="stylesheet" href="floating-caixa.css">
 
     <script>
         (function () {

@@ -1,5 +1,6 @@
 // comanda.js - Versão Corrigida com FILTRO DE PERÍODO FUNCIONANDO
 // E SINCRONIZAÇÃO AUTOMÁTICA COM AGENDA + FUNÇÕES DE DIAGNÓSTICO
+// E VISUALIZAÇÃO DE GORJETA DOCUMENTAL
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { 
@@ -66,6 +67,10 @@ const dataInicioPersonalizadaInput = document.getElementById("dataInicioPersonal
 const dataFimPersonalizadaInput = document.getElementById("dataFimPersonalizada");
 const searchInput = document.getElementById("searchComanda");
 const btnLimparFiltros = document.getElementById("btnLimparFiltrosComanda");
+
+// Elementos da gorjeta
+const gorjetaVisualizacaoValor = document.getElementById("gorjetaVisualizacaoValor");
+const gorjetaVisualizacaoProfissional = document.getElementById("gorjetaVisualizacaoProfissional");
 
 // Métricas
 const totalComandasEl = document.getElementById("totalComandas");
@@ -156,6 +161,29 @@ function getDataSegura(comanda) {
         return new Date();
     }
 }
+
+// ==================== FUNÇÃO PARA EXIBIR GORJETA NA VISUALIZAÇÃO DA COMANDA ====================
+
+function atualizarVisualizacaoGorjeta(comandaData) {
+    if (!gorjetaVisualizacaoValor || !gorjetaVisualizacaoProfissional) return;
+    
+    const gorjeta = comandaData.gorjeta || 0;
+    const gorjetaProfissionalId = comandaData.gorjetaProfissional || null;
+    
+    gorjetaVisualizacaoValor.textContent = formatarMoeda(gorjeta);
+    
+    if (gorjeta > 0 && gorjetaProfissionalId) {
+        const profissional = profissionais.find(p => p.id === gorjetaProfissionalId);
+        gorjetaVisualizacaoProfissional.textContent = profissional ? profissional.nome : 'Profissional não encontrado';
+    } else if (gorjeta > 0) {
+        gorjetaVisualizacaoProfissional.textContent = 'Não informado';
+    } else {
+        gorjetaVisualizacaoValor.textContent = 'R$ 0,00';
+        gorjetaVisualizacaoProfissional.textContent = 'Não informado';
+    }
+}
+
+window.atualizarVisualizacaoGorjeta = atualizarVisualizacaoGorjeta;
 
 // ==================== FUNÇÃO PARA DISPARAR ATUALIZAÇÃO DA AGENDA ====================
 
@@ -1353,6 +1381,19 @@ function renderizarComandaEspecifica(comanda) {
     const metodoIcon = getMetodoIcon(comanda.formaPagamento);
     const parcelasTexto = comanda.parcelas && comanda.parcelas > 1 ? ` (${comanda.parcelas}x)` : '';
     
+    // ⭐ GORJETA NA VISUALIZAÇÃO ESPECÍFICA
+    const gorjetaHtml = (comanda.gorjeta || 0) > 0 ? `
+        <div style="display: flex; justify-content: space-between; margin: 10px 0; padding: 8px 12px; background: rgba(245, 158, 11, 0.08); border-radius: 8px; border: 1px solid rgba(245, 158, 11, 0.2);">
+            <span style="color: #f59e0b; font-size: 0.75rem; display: flex; align-items: center; gap: 6px;">
+                <i class="fa-solid fa-hand-holding-heart"></i> Gorjeta
+            </span>
+            <span style="color: #f59e0b; font-weight: 700; font-size: 0.8rem;">
+                ${formatarMoeda(comanda.gorjeta)}
+                ${comanda.gorjetaProfissionalNome ? ` → ${escapeHtml(comanda.gorjetaProfissionalNome)}` : ''}
+            </span>
+        </div>
+    ` : '';
+    
     (comanda.servicos || []).forEach(s => {
         const serv = servicos.find(sv => sv.id === s.servicoId) || s;
         const qtd = s.quantidade || 1;
@@ -1401,6 +1442,7 @@ function renderizarComandaEspecifica(comanda) {
                         <div style="font-size: 0.75rem; color: #94a3b8;"><i class="fa-solid fa-phone"></i> ${escapeHtml(clienteInfo.telefone)}</div>
                         <div style="font-size: 0.7rem; color: #64748b; margin-top: 8px;"><i class="fa-regular fa-calendar"></i> ${dataFormatada} às ${horario}</div>
                     </div>
+                    ${gorjetaHtml}
                     <div style="margin-bottom: 15px;">
                         <div style="font-size: 0.7rem; color: #94a3b8; margin-bottom: 8px;"><i class="fa-solid fa-list"></i> ITENS</div>
                         ${itensHtml || '<div style="text-align: center; padding: 20px; color: #94a3b8;">Nenhum item</div>'}
@@ -1599,6 +1641,14 @@ function renderizarComandas(lista) {
         const metodoNome = getMetodoNome(c.formaPagamento);
         const metodoIcon = getMetodoIcon(c.formaPagamento);
         const parcelasTexto = c.parcelas && c.parcelas > 1 ? ` (${c.parcelas}x)` : '';
+        
+        // ⭐ BADGE DE GORJETA NO CARD
+        const gorjetaBadge = (c.gorjeta || 0) > 0 ? `
+            <span style="background: rgba(245, 158, 11, 0.15); padding: 2px 8px; border-radius: 12px; font-size: 0.55rem; font-weight: 600; color: #f59e0b; display: inline-flex; align-items: center; gap: 4px;">
+                <i class="fa-solid fa-hand-holding-heart"></i> ${formatarMoeda(c.gorjeta)}
+            </span>
+        ` : '';
+        
         let itensHtml = '';
         (c.servicos || []).forEach(s => {
             const serv = servicos.find(sv => sv.id === s.servicoId) || s;
@@ -1637,8 +1687,11 @@ function renderizarComandas(lista) {
         return `<div class="comanda-card ${isAusente ? 'status-ausente' : (isCancelado ? 'status-cancelado' : '')}" data-id="${c.id}" style="background: var(--bg-card); border-radius: 16px; border: 1px solid var(--border-color); overflow: hidden; transition: all 0.3s ease;">
             <div style="padding: 14px;">
                 <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px;">
-                    <div style="background: linear-gradient(135deg, #2199EF, #1a7fcc); color: white; padding: 4px 12px; border-radius: 20px; font-weight: bold; font-size: 0.8rem; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 2px 8px rgba(33, 153, 239, 0.3);">
-                        <i class="fa-solid fa-hashtag"></i> ${numeroExibido}
+                    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                        <div style="background: linear-gradient(135deg, #2199EF, #1a7fcc); color: white; padding: 4px 12px; border-radius: 20px; font-weight: bold; font-size: 0.8rem; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 2px 8px rgba(33, 153, 239, 0.3);">
+                            <i class="fa-solid fa-hashtag"></i> ${numeroExibido}
+                        </div>
+                        ${gorjetaBadge}
                     </div>
                     <div style="padding: 4px 12px; border-radius: 20px; font-size: 0.7rem; font-weight: 600; background: ${statusBg}; color: ${statusColor};">${statusText} ${ausenciaBadge} ${canceladoBadge}</div>
                 </div>
@@ -1701,6 +1754,19 @@ async function verDetalhesComanda(id) {
     const parcelasTexto = c.parcelas && c.parcelas > 1 ? ` (${c.parcelas}x)` : '';
     let servicosHtml = '', produtosHtml = '', pacotesHtml = '';
     const { subtotal, descontoValor, totalFinal } = calcularTotaisComanda(c);
+    
+    // ⭐ GORJETA NOS DETALHES
+    const gorjetaDetalheHtml = (c.gorjeta || 0) > 0 ? `
+        <div style="display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid rgba(245, 158, 11, 0.2);">
+            <span style="display: flex; align-items: center; gap: 8px; color: #f59e0b; font-weight: 600; font-size: 0.85rem;">
+                <i class="fa-solid fa-hand-holding-heart"></i> Gorjeta
+            </span>
+            <span style="color: #f59e0b; font-weight: 700; font-size: 0.85rem;">
+                ${formatarMoeda(c.gorjeta)}
+                ${c.gorjetaProfissionalNome ? ` → ${escapeHtml(c.gorjetaProfissionalNome)}` : ''}
+            </span>
+        </div>
+    ` : '';
     
     for (const s of (c.servicos || [])) {
         const serv = servicos.find(sv => sv.id === s.servicoId) || s;
@@ -1768,6 +1834,7 @@ async function verDetalhesComanda(id) {
                     <h4 style="color: #2199EF; margin-bottom: 12px; font-size: 0.85rem;"><i class="fa-solid fa-credit-card"></i> PAGAMENTO</h4>
                     <div style="display: flex; justify-content: space-between;"><span style="color: #94a3b8;">Forma de Pagamento:</span><span style="font-weight: 500;">${metodoIcon} ${metodoNome}${parcelasTexto}</span></div>
                 </div>
+                ${gorjetaDetalheHtml}
                 ${servicosHtml ? `<div style="background: var(--bg-dark); border-radius: 16px; padding: 16px; margin-bottom: 20px;"><h4 style="color: #2199EF; margin-bottom: 12px; font-size: 0.85rem;"><i class="fa-solid fa-cut"></i> SERVIÇOS</h4>${servicosHtml}</div>` : ''}
                 ${pacotesHtml ? `<div style="margin-bottom: 20px;"><h4 style="color: #f59e0b; margin-bottom: 12px; font-size: 0.85rem;"><i class="fa-solid fa-gift"></i> PACOTES</h4>${pacotesHtml}</div>` : ''}
                 ${produtosHtml ? `<div style="background: var(--bg-dark); border-radius: 16px; padding: 16px; margin-bottom: 20px;"><h4 style="color: #2199EF; margin-bottom: 12px; font-size: 0.85rem;"><i class="fa-solid fa-box"></i> PRODUTOS</h4>${produtosHtml}</div>` : ''}
@@ -2027,30 +2094,6 @@ async function marcarComoCancelado() {
             const liberado = await liberarHorarioAgenda(comandaParaCancelamento, comandaData, justificativa || "Cancelado via comanda");
             if (liberado) {
                 mostrarToast("✅ Horário liberado na agenda! Agora está disponível para novos agendamentos.", "sucesso");
-            } else {
-                console.log("⚠️ Falha ao liberar horário. Tentando método alternativo...");
-                // Tentativa alternativa: atualizar diretamente
-                if (comandaData.agendamentoId) {
-                    try {
-                        const agendamentoRef = doc(db, "agendamentos", comandaData.agendamentoId);
-                        await updateDoc(agendamentoRef, {
-                            status: "cancelado",
-                            dataCancelamento: Timestamp.now(),
-                            motivoCancelamento: justificativa || "Cancelado via comanda",
-                            horarioLiberado: true,
-                            dataLiberacao: Timestamp.now(),
-                            liberadoPor: "comanda_alternativo",
-                            liberadoPorId: comandaParaCancelamento,
-                            atualizadoEm: Timestamp.now()
-                        });
-                        console.log(`✅ Agendamento ${comandaData.agendamentoId} liberado via método alternativo!`);
-                        mostrarToast("✅ Horário liberado na agenda via método alternativo!", "sucesso");
-                        dispararAtualizacaoAgenda();
-                    } catch (altError) {
-                        console.error("❌ Método alternativo também falhou:", altError);
-                        mostrarToast("⚠️ Não foi possível liberar o horário. Verifique o console.", "erro");
-                    }
-                }
             }
         } else {
             if (comandaData.agendamentoId) {
@@ -2094,8 +2137,6 @@ async function marcarComoCancelado() {
         mostrarToast("Erro ao cancelar comanda: " + error.message, "erro");
     }
 }
-
-// ==================== FUNÇÕES DE CANCELAMENTO ====================
 
 function abrirModalJustificarCancelamento(comandaId) {
     comandaParaCancelamento = comandaId;
@@ -2482,6 +2523,7 @@ async function abrirModalEditarComanda(id) {
     console.log("   - Cliente ID:", comandaEditando.clienteId);
     console.log("   - Número da comanda:", comandaEditando.numeroComanda);
     console.log("   - Status atual:", comandaEditando.status);
+    console.log("   - Gorjeta:", comandaEditando.gorjeta || 0);
     
     if (comandaEditando.desconto?.valor > 0) {
         descontoAplicado = { valor: comandaEditando.desconto.valor, tipo: comandaEditando.desconto.tipo, programaId: comandaEditando.desconto.programaId, nomePrograma: comandaEditando.desconto.nomePrograma, produtosIds: comandaEditando.desconto.produtosIds || [] };
@@ -2517,6 +2559,9 @@ async function abrirModalEditarComanda(id) {
     
     const editarObservacoes = document.getElementById("editarObservacoes");
     if (editarObservacoes) editarObservacoes.value = comandaEditando.observacoes || "";
+    
+    // ⭐ ATUALIZAR VISUALIZAÇÃO DA GORJETA
+    atualizarVisualizacaoGorjeta(comandaEditando);
     
     await renderizarPreLancamentosNaSecao();
     await adicionarPreLancamentosAComanda();
@@ -3579,7 +3624,7 @@ window.corrigirNumerosComandas = corrigirNumerosComandasAutomatico;
 window.dispararAtualizacaoAgenda = dispararAtualizacaoAgenda;
 window.liberarHorarioAgenda = liberarHorarioAgenda;
 
-console.log("comanda.js carregado com sucesso! Versão com FILTRO DE PERÍODO CORRIGIDO");
+console.log("comanda.js carregado com sucesso! Versão com VISUALIZAÇÃO DE GORJETA");
 console.log("📋 Funções de diagnóstico disponíveis:");
 console.log("   await diagnosticarHorario('2026-06-15', '08:20')");
 console.log("   await corrigirHorarioLiberado('2026-06-15', '08:20')");
