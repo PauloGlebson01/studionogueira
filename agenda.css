@@ -436,6 +436,10 @@
 .btn-status.ver-comanda {
     background: #2199EF;
     color: #FFFFFF;
+    padding: 5px 20px;
+    display: inline-flex;
+    justify-content: center;
+    width: 230px;
 }
 
 .btn-status.ver-comanda:hover {

@@ -2,6 +2,7 @@
 // Com sincronização em tempo real com comandas e atualização de estoque ao concluir
 // CORREÇÃO: URL de avaliação corrigida (sem duplicação)
 // VERSÃO: Layout Horizontal em Tabela com Dia da Semana Corrigido
+// CORREÇÃO v2: Removidos botões "Ausente" e "Cancelar" - gestão feita apenas na comanda
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
@@ -94,22 +95,18 @@ function obterDiaSemana(dataStr) {
         let dia = null, mes = null, ano = null;
         let data;
         
-        // Caso 1: Timestamp do Firestore
         if (dataStr.toDate) {
             data = dataStr.toDate();
         }
-        // Caso 2: String no formato DD/MM/YYYY
         else if (typeof dataStr === 'string' && dataStr.includes('/')) {
             const partes = dataStr.split('/');
             if (partes.length >= 3) {
                 dia = parseInt(partes[0], 10);
                 mes = parseInt(partes[1], 10);
                 ano = parseInt(partes[2], 10);
-                // Criar data corretamente (mês em JS é 0-index)
                 data = new Date(ano, mes - 1, dia);
             }
         }
-        // Caso 3: String no formato YYYY-MM-DD
         else if (typeof dataStr === 'string' && dataStr.includes('-')) {
             const partes = dataStr.split('-');
             if (partes.length >= 3) {
@@ -927,66 +924,6 @@ async function abrirComandaDoAgendamento(agendamentoId) {
     }
 }
 
-// ==================== FUNÇÃO MARCAR COMO AUSENTE ====================
-
-async function marcarComoAusente(id, agendamento) {
-    try {
-        await updateDoc(doc(db, "agendamentos", id), {
-            status: "ausente",
-            dataAusencia: Timestamp.now(),
-            motivoAusencia: "Cliente não compareceu",
-            atualizadoEm: Timestamp.now()
-        });
-
-        const comandaQuery = query(collection(db, "comandas"), where("agendamentoId", "==", id));
-        const comandaSnap = await getDocs(comandaQuery);
-
-        for (const docSnap of comandaSnap.docs) {
-            await updateDoc(doc(db, "comandas", docSnap.id), {
-                status: "ausente",
-                justificativaAusencia: "Cliente não compareceu",
-                dataAusencia: Timestamp.now(),
-                updatedAt: Timestamp.now()
-            });
-            console.log(`✅ Comanda ${docSnap.id} atualizada para status "ausente"`);
-        }
-
-        let telefone = agendamento.telefone ||
-            agendamento.whatsapp ||
-            agendamento.celular ||
-            agendamento.contato ||
-            (agendamento.clienteId ? await buscarTelefoneCliente(agendamento.clienteId) : null);
-
-        if (!telefone && (agendamento.cliente || agendamento.nome)) {
-            telefone = await buscarTelefonePorNome(agendamento.cliente || agendamento.nome);
-        }
-
-        const nomeCliente = agendamento.cliente || agendamento.nome || 'cliente';
-        const dataFormatada = formatarData(agendamento.data);
-        const horario = agendamento.horario || '--:00';
-
-        if (telefone) {
-            const telefoneLimpo = telefone.toString().replace(/\D/g, "");
-            if (telefoneLimpo.length >= 10 && telefoneLimpo.length <= 11) {
-                const mensagem = `*🏢 STUDIO NOGUEIRA* - *AVISO DE AUSÊNCIA*\n\nOlá, *${nomeCliente}*!\n\nFicamos tristes em termos que informar pela sua ausência em nossa barbearia:\n\n📅 *Data:* ${dataFormatada}\n⏰ *Horário:* ${horario}\n\n✨ *Para remarcar seu horário*, entre em contato conosco:\n📞 (83) 9 8661-7303\n\nEstamos à disposição para atendê-lo(a)!\n\n*Studio Nogueira* - Mais de 10 anos transformando estilos. ✂️💈`;
-
-                window.open(`https://wa.me/55${telefoneLimpo}?text=${encodeURIComponent(mensagem)}`, '_blank');
-                mostrarToast(`Cliente marcado como ausente e notificado por WhatsApp!`, "sucesso");
-            } else {
-                mostrarToast(`Cliente marcado como ausente (telefone inválido: ${telefoneLimpo})`, "sucesso");
-            }
-        } else {
-            mostrarToast(`Cliente marcado como ausente! (sem telefone cadastrado para enviar mensagem)`, "sucesso");
-        }
-
-        setTimeout(() => aplicarFiltro(), 500);
-
-    } catch (error) {
-        console.error("Erro ao marcar como ausente:", error);
-        mostrarToast("Erro ao marcar ausência", "erro");
-    }
-}
-
 // ==================== FUNÇÃO CONCLUIR AGENDAMENTO ====================
 
 async function concluirAgendamento(id, agendamento) {
@@ -1229,68 +1166,7 @@ async function concluirAgendamento(id, agendamento) {
     }
 }
 
-// ==================== FUNÇÃO CANCELAR AGENDAMENTO ====================
-
-async function cancelarAgendamento(id, agendamento) {
-    try {
-        await updateDoc(doc(db, "agendamentos", id), {
-            status: "cancelado",
-            motivoCancelamento: agendamento.motivoCancelamento || "Cancelado pelo barbeiro",
-            dataCancelamento: Timestamp.now(),
-            atualizadoEm: Timestamp.now()
-        });
-
-        const comandaQuery = query(collection(db, "comandas"), where("agendamentoId", "==", id));
-        const comandaSnap = await getDocs(comandaQuery);
-
-        for (const docSnap of comandaSnap.docs) {
-            await updateDoc(doc(db, "comandas", docSnap.id), {
-                status: "cancelado",
-                justificativaCancelamento: agendamento.motivoCancelamento || "Cancelado via agenda",
-                dataCancelamento: Timestamp.now(),
-                updatedAt: Timestamp.now()
-            });
-            console.log(`✅ Comanda ${docSnap.id} atualizada para status "cancelado"`);
-        }
-
-        let telefone = agendamento.telefone ||
-            agendamento.whatsapp ||
-            agendamento.celular ||
-            agendamento.contato ||
-            (agendamento.clienteId ? await buscarTelefoneCliente(agendamento.clienteId) : null);
-
-        if (!telefone && (agendamento.cliente || agendamento.nome)) {
-            telefone = await buscarTelefonePorNome(agendamento.cliente || agendamento.nome);
-        }
-
-        const nomeCliente = agendamento.cliente || agendamento.nome || 'cliente';
-        const dataFormatada = formatarData(agendamento.data);
-        const horario = agendamento.horario || '--:00';
-        const profissional = agendamento.profissional || 'barbeiro';
-
-        if (telefone) {
-            const telefoneLimpo = telefone.toString().replace(/\D/g, "");
-            if (telefoneLimpo.length >= 10 && telefoneLimpo.length <= 11) {
-                const mensagem = `*🏢 STUDIO NOGUEIRA* - *CANCELAMENTO DE AGENDAMENTO*\n\nOlá, *${nomeCliente}*!\n\nInformamos que seu agendamento foi *CANCELADO* conforme solicitado.\n\n📅 *Data original:* ${dataFormatada}\n⏰ *Horário:* ${horario}\n👨‍🦱 *Barbeiro:* ${profissional}\n\n✨ *Para remarcar seu horário*, acesse nosso link:\n🔗 https://studionogueira.vercel.app/agendamento.html\n\nOu entre em contato conosco:\n📞 (83) 9 8661-7303\n\nAgradecemos a compreensão e estamos à disposição!\n\n*Studio Nogueira* - Mais de 10 anos transformando estilos. ✂️💈`;
-
-                window.open(`https://wa.me/55${telefoneLimpo}?text=${encodeURIComponent(mensagem)}`, '_blank');
-                mostrarToast(`❌ Agendamento cancelado! Mensagem enviada para o cliente.`, "sucesso");
-            } else {
-                mostrarToast(`❌ Agendamento cancelado! (telefone inválido)`, "sucesso");
-            }
-        } else {
-            mostrarToast(`❌ Agendamento cancelado! (sem telefone para notificar)`, "sucesso");
-        }
-
-        setTimeout(() => aplicarFiltro(), 500);
-
-    } catch (error) {
-        console.error("Erro ao cancelar agendamento:", error);
-        mostrarToast("Erro ao cancelar agendamento", "erro");
-    }
-}
-
-// ==================== CRIAR LINHA DA TABELA (FORMATO HORIZONTAL COM DIA DA SEMANA CORRIGIDO) ====================
+// ==================== CRIAR LINHA DA TABELA (SEM BOTÕES AUSENTE E CANCELAR) ====================
 
 function criarLinhaAgendamento(agendamento) {
     const tr = document.createElement('tr');
@@ -1360,26 +1236,21 @@ function criarLinhaAgendamento(agendamento) {
         valorHtml = `<div class="valor-info"><span class="valor-total">${formatarMoeda(valorTotal)}</span></div>`;
     }
 
+    // ===== BOTÕES DE AÇÃO - APENAS CONCLUIR, LEMBRETES E VER COMANDA =====
     let botoesAcao = '';
     if (agendamento.status === 'confirmado') {
         botoesAcao = `
             <div class="appointment-actions">
-                <button class="btn-status concluir" data-id="${agendamento.id}">
+                <button class="btn-status concluir" data-id="${agendamento.id}" title="Concluir atendimento">
                     <i class="fa-regular fa-circle-check"></i> Concluir
                 </button>
-                <button class="btn-status ausentar" data-id="${agendamento.id}">
-                    <i class="fa-regular fa-clock"></i> Ausente
-                </button>
-                <button class="btn-status cancelar" data-id="${agendamento.id}">
-                    <i class="fa-regular fa-circle-xmark"></i> Cancelar
-                </button>
-                <button class="btn-status lembrete-dia" data-id="${agendamento.id}" data-tipo="dia">
+                <button class="btn-status lembrete-dia" data-id="${agendamento.id}" data-tipo="dia" title="Enviar lembrete do dia">
                     <i class="fa-regular fa-bell"></i> Hoje
                 </button>
-                <button class="btn-status lembrete-vespera" data-id="${agendamento.id}" data-tipo="vespera">
+                <button class="btn-status lembrete-vespera" data-id="${agendamento.id}" data-tipo="vespera" title="Enviar lembrete de véspera">
                     <i class="fa-regular fa-clock"></i> Véspera
                 </button>
-                <button class="btn-status ver-comanda" data-id="${agendamento.id}">
+                <button class="btn-status ver-comanda" data-id="${agendamento.id}" title="Abrir comanda">
                     <i class="fa-solid fa-receipt"></i> Comanda
                 </button>
             </div>
@@ -1387,7 +1258,7 @@ function criarLinhaAgendamento(agendamento) {
     } else {
         botoesAcao = `
             <div class="appointment-actions">
-                <button class="btn-status ver-comanda" data-id="${agendamento.id}">
+                <button class="btn-status ver-comanda" data-id="${agendamento.id}" title="Ver comanda">
                     <i class="fa-solid fa-receipt"></i> Ver Comanda
                 </button>
             </div>
@@ -1426,17 +1297,10 @@ function criarLinhaAgendamento(agendamento) {
         </td>
     `;
 
+    // Event Listeners
     tr.querySelector('.concluir')?.addEventListener('click', (e) => {
         e.stopPropagation();
         concluirAgendamento(agendamento.id, agendamento);
-    });
-    tr.querySelector('.ausentar')?.addEventListener('click', (e) => {
-        e.stopPropagation();
-        marcarComoAusente(agendamento.id, agendamento);
-    });
-    tr.querySelector('.cancelar')?.addEventListener('click', (e) => {
-        e.stopPropagation();
-        cancelarAgendamento(agendamento.id, agendamento);
     });
     tr.querySelector('.lembrete-dia')?.addEventListener('click', async (e) => {
         e.stopPropagation();
@@ -1713,6 +1577,7 @@ function pararVerificacaoLembretes() {
 
 document.addEventListener('DOMContentLoaded', () => {
     console.log("📅 Agenda.js iniciado - Versão com LEMBRETES WHATSAPP, LAYOUT HORIZONTAL E DIA DA SEMANA CORRIGIDO");
+    console.log("ℹ️ Botões 'Ausente' e 'Cancelar' removidos - gestão apenas na comanda");
     
     if (dataInicio) dataInicio.value = '';
     if (dataFim) dataFim.value = '';
