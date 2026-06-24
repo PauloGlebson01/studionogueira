@@ -1,8 +1,6 @@
 // bloqueios.js - CORREÇÃO DE DATAS (TIMEZONE LOCAL) - VERSÃO COMPLETA
-// CORREÇÃO: Agendamentos concluídos NUNCA mais ficam disponíveis na visualização
-// CORREÇÃO: Visualização semanal com TODOS os horários de TODOS os dias
-// CORREÇÃO: Exibição correta de agendamentos em Quinta e Sexta-feira (18/06 e 19/06)
-// CORREÇÃO: Normalização robusta de datas para comparação
+// CORREÇÃO: Apenas agendamentos CONFIRMADOS ocupam horário
+// CORREÇÃO: Agendamentos com horarioLiberado=true NÃO bloqueiam
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
@@ -58,7 +56,9 @@ const horariosQuintaSabado = [
 ];
 
 // ========== CORREÇÃO: Status que são considerados ATIVOS (ocupam horário) ==========
-const STATUS_ATIVOS = ["confirmado", "aguardando_pagamento", "pendente", "concluido"];
+// AGORA: Apenas "confirmado" ocupa o horário (após pagamento finalizado)
+// "aguardando_pagamento" NÃO ocupa mais o horário
+const STATUS_ATIVOS = ["confirmado"];
 
 const elementosDOM = {
     bloqueiosList: document.getElementById('bloqueiosList'),
@@ -190,7 +190,6 @@ function formatarData(data) {
 
 /**
  * Formata data para comparação (YYYY-MM-DD) - USO LOCAL
- * CORREÇÃO: Normaliza qualquer formato de data para YYYY-MM-DD
  */
 function formatarDataComparacao(data) {
     if (!data) return '';
@@ -411,8 +410,9 @@ function carregarAgendamentosEmTempoReal() {
                     dataString = formatarDataComparacao(firestoreData.dataAgendamento);
                 }
                 
+                // ========== CORREÇÃO: Apenas "confirmado" ocupa horário ==========
                 // Verificar se o status está na lista de ATIVOS
-                const statusAtivo = STATUS_ATIVOS.includes(firestoreData.status);
+                const statusAtivo = firestoreData.status === "confirmado";
                 
                 let clienteNome = firestoreData.clienteNome || firestoreData.nome || firestoreData.cliente || 'Cliente';
                 let servicoNome = firestoreData.servicoNome || firestoreData.servico || firestoreData.servicosNomes || 'Serviço';
@@ -438,7 +438,7 @@ function carregarAgendamentosEmTempoReal() {
             });
             
             console.log(`📊 Total de agendamentos carregados: ${agendamentos.length}`);
-            console.log(`📋 Status considerados ATIVOS: ${STATUS_ATIVOS.join(', ')}`);
+            console.log(`📋 Status considerados ATIVOS (ocupam horário): ${STATUS_ATIVOS.join(', ')}`);
             console.log(`📊 Agendamentos ativos: ${agendamentos.filter(a => a.statusAtivo).length}`);
             
             const tabAgenda = document.getElementById('tab-agenda-visualizacao');
@@ -475,8 +475,8 @@ function abreviarStatus(status) {
     if (!status) return '⏳ Pend.';
     
     const statusMap = {
-        'aguardando_pagamento': '⚠️ Pagto',
-        'aguardendo_pagamento': '⚠️ Pagto',
+        'aguardando_pagamento': '⏳ Pagto Pend.',
+        'aguardendo_pagamento': '⏳ Pagto Pend.',
         'confirmado': '✅ Conf.',
         'concluido': '✓ Concl.',
         'pendente': '⏳ Pend.',
@@ -571,7 +571,7 @@ function renderizarAgenda() {
     }
 }
 
-// ========== FUNÇÃO CORRIGIDA: renderizarSemana com TODOS os horários ==========
+// ========== FUNÇÃO CORRIGIDA: renderizarSemana ==========
 function renderizarSemana() {
     const inicioSemana = obterInicioSemana(currentDate);
     
@@ -587,9 +587,9 @@ function renderizarSemana() {
     const diasString = dias.map(dia => formatarDataComparacao(dia));
     console.log("📅 Dias da semana:", diasString);
     
-    // Filtrar apenas agendamentos ATIVOS (incluindo concluídos)
-    const agendamentosAtivos = agendamentos.filter(a => a.statusAtivo === true);
-    console.log(`📊 Agendamentos ativos (ocupam horário): ${agendamentosAtivos.length}`);
+    // ========== CORREÇÃO: Filtrar apenas agendamentos CONFIRMADOS ==========
+    const agendamentosAtivos = agendamentos.filter(a => a.status === "confirmado" && a.statusAtivo === true);
+    console.log(`📊 Agendamentos confirmados (ocupam horário): ${agendamentosAtivos.length}`);
     
     // Filtrar agendamentos da semana
     const agendamentosSemana = agendamentosAtivos.filter(a => {
@@ -598,14 +598,14 @@ function renderizarSemana() {
         return diasString.includes(dataAgendamentoStr);
     });
     
-    console.log(`📊 Agendamentos na semana: ${agendamentosSemana.length}`);
+    console.log(`📊 Agendamentos confirmados na semana: ${agendamentosSemana.length}`);
     
     // LOG DETALHADO para depuração
     diasString.forEach(diaStr => {
         const count = agendamentosSemana.filter(a => a.dataString === diaStr).length;
         const diaSemana = getDiaSemana(diaStr);
         const nomeDia = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab'][diaSemana] || 'Inválido';
-        console.log(`   📌 ${diaStr} (${nomeDia}): ${count} agendamentos`);
+        console.log(`   📌 ${diaStr} (${nomeDia}): ${count} agendamentos confirmados`);
         
         agendamentosSemana.filter(a => a.dataString === diaStr).forEach(a => {
             console.log(`      - ${a.clienteNome}: ${a.horario} (${a.status})`);
@@ -617,7 +617,7 @@ function renderizarSemana() {
         agendamentosPorDia[diaStr] = agendamentosSemana.filter(a => a.dataString === diaStr);
     });
     
-    // ========== CORREÇÃO PRINCIPAL: Coletar TODOS os horários únicos da semana ==========
+    // Coletar TODOS os horários únicos da semana
     const todosHorariosSet = new Set();
     
     for (let idx = 0; idx < dias.length; idx++) {
@@ -786,8 +786,8 @@ function renderizarMes() {
     
     elementosDOM.periodoLabel.textContent = `${formatarData(primeiroDia)} - ${formatarData(ultimoDia)}`;
     
-    // Filtrar apenas agendamentos ATIVOS (incluindo concluídos)
-    const agendamentosAtivos = agendamentos.filter(a => a.statusAtivo === true);
+    // Filtrar apenas agendamentos CONFIRMADOS
+    const agendamentosAtivos = agendamentos.filter(a => a.status === "confirmado" && a.statusAtivo === true);
     
     const agendamentosPorData = {};
     agendamentosAtivos.forEach(a => {
@@ -865,18 +865,19 @@ function renderizarDia() {
         return;
     }
     
-    const agendamentosAtivos = agendamentos.filter(a => a.statusAtivo === true);
+    // Filtrar apenas agendamentos CONFIRMADOS
+    const agendamentosAtivos = agendamentos.filter(a => a.status === "confirmado" && a.statusAtivo === true);
     const agendamentosDia = agendamentosAtivos.filter(a => a.dataString === dataStr);
     agendamentosDia.sort((a, b) => (a.horario || '').localeCompare(b.horario || ''));
     
     if (agendamentosDia.length === 0) {
-        elementosDOM.agendaVisualizacao.innerHTML = `<div class="empty-state"><i class="fa-regular fa-calendar"></i><p>Nenhum agendamento para ${formatarData(dataSelecionada)}</p></div>`;
+        elementosDOM.agendaVisualizacao.innerHTML = `<div class="empty-state"><i class="fa-regular fa-calendar"></i><p>Nenhum agendamento confirmado para ${formatarData(dataSelecionada)}</p></div>`;
         return;
     }
     
     elementosDOM.agendaVisualizacao.innerHTML = `
         <div class="agenda-dia">
-            <div class="dia-resumo"><div class="resumo-info"><i class="fa-solid fa-calendar-check"></i><span>${agendamentosDia.length} agendamento(s)</span></div></div>
+            <div class="dia-resumo"><div class="resumo-info"><i class="fa-solid fa-calendar-check"></i><span>${agendamentosDia.length} agendamento(s) confirmado(s)</span></div></div>
             <div class="dia-agendamentos">
                 ${agendamentosDia.map(a => {
                     const statusAbreviado = abreviarStatus(a.status);
@@ -936,7 +937,7 @@ function mudarVisualizacao() {
     renderizarAgenda();
 }
 
-// ========== FUNÇÕES DE BLOQUEIO (MODAL) - CORRIGIDAS ==========
+// ========== FUNÇÕES DE BLOQUEIO (MODAL) ==========
 
 function abrirModalNovoBloqueio() {
     if (elementosDOM.modalTitle) elementosDOM.modalTitle.innerHTML = '<i class="fa-solid fa-plus"></i> Novo Bloqueio';

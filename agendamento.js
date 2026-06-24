@@ -1,5 +1,6 @@
 // agendamento.js - Versão CORRIGIDA com VERIFICAÇÃO DE HORÁRIOS LIBERADOS
 // Agendamentos com status CANCELADO ou AUSENTE ou horarioLiberado=true NÃO bloqueiam mais os horários
+// CORREÇÃO: Apenas agendamentos CONFIRMADOS ocupam horário (pagamento finalizado)
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { 
@@ -991,7 +992,7 @@ function configurarEventosServicos() {
     });
 }
 
-// ==================== FUNÇÃO DE CLIENTE CORRIGIDA ====================
+// ==================== FUNÇÃO DE CLIENTE ====================
 async function salvarOuAtualizarCliente(dadosCliente) {
     try {
         const { nome, telefone, email, dataNascimento } = dadosCliente;
@@ -1196,7 +1197,7 @@ function configurarDataMinima() {
     dataInput.min = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
 }
 
-// ==================== ATUALIZAR HORÁRIOS (CORRIGIDO - VERSÃO FINAL) ====================
+// ==================== ATUALIZAR HORÁRIOS (CORRIGIDO) ====================
 async function atualizarHorarios() {
     const data = dataInput.value;
     const profissionalId = profissionalSelect?.value;
@@ -1273,14 +1274,15 @@ async function atualizarHorarios() {
         const snapshot = await getDocs(q);
         
         // ========== STATUS QUE OCUPAM HORÁRIO ==========
-        // IMPORTANTE: Agendamentos com horarioLiberado = true NUNCA bloqueiam
+        // CORREÇÃO: Agora apenas CONFIRMADO ocupa o horário (pagamento finalizado)
+        // Agendamentos com horarioLiberado = true NUNCA bloqueiam
         // Agendamentos com status cancelado ou ausente NUNCA bloqueiam
-        const statusOcupados = ["confirmado", "pendente", "aguardando_pagamento", "concluido"];
+        const statusOcupados = ["confirmado"];
         const horariosOcupados = [];
         
         console.log(`📊 TOTAL de agendamentos encontrados: ${snapshot.size}`);
         console.log(`📋 Status considerados OCUPADOS: ${statusOcupados.join(', ')}`);
-        console.log(`📋 Status IGNORADOS (liberam horário): cancelado, ausente`);
+        console.log(`📋 Status IGNORADOS (liberam horário): aguardando_pagamento, pendente, cancelado, ausente`);
         console.log(`🔓 Agendamentos com horarioLiberado=true são IGNORADOS`);
         
         snapshot.forEach(doc => {
@@ -1292,12 +1294,18 @@ async function atualizarHorarios() {
             // PRIORIDADE MÁXIMA: Se horarioLiberado = true, IGNORAR completamente
             if (horarioLiberado) {
                 console.log(`   🟢 HORÁRIO LIBERADO (IGNORADO): ${horario} (status: ${status}, horarioLiberado: true)`);
-                return; // Pula este agendamento completamente
+                return;
             }
             
             // Se o status for cancelado ou ausente, NÃO considerar como ocupado
             if (status === "cancelado" || status === "ausente") {
                 console.log(`   🟢 IGNORADO/LIBERADO: ${horario} (status: ${status})`);
+                return;
+            }
+            
+            // Se o status for aguardando_pagamento ou pendente, NÃO considerar como ocupado
+            if (status === "aguardando_pagamento" || status === "pendente") {
+                console.log(`   🟢 IGNORADO (pagamento pendente): ${horario} (status: ${status})`);
                 return;
             }
             
@@ -1310,7 +1318,7 @@ async function atualizarHorarios() {
                         status: status,
                         horarioLiberado: horarioLiberado
                     });
-                    console.log(`   🔴 OCUPADO: ${horario} (status: ${status}, horarioLiberado: ${horarioLiberado})`);
+                    console.log(`   🔴 OCUPADO: ${horario} (status: ${status})`);
                 }
             } else {
                 console.log(`   🟢 IGNORADO: ${horario} (status: ${status})`);
@@ -1510,7 +1518,7 @@ if (form) {
         if (data && horario && profissionalId) {
             const agendamentosRef = collection(db, "agendamentos");
             
-            // CORREÇÃO: Buscar TODOS os agendamentos para verificar se o horário está realmente ocupado
+            // Buscar TODOS os agendamentos para verificar se o horário está realmente ocupado
             const q = query(
                 agendamentosRef, 
                 where("data", "==", data), 
@@ -1542,8 +1550,14 @@ if (form) {
                     continue;
                 }
                 
-                // Verificar se o status ocupa o horário
-                const statusOcupados = ["confirmado", "pendente", "aguardando_pagamento", "concluido"];
+                // Se status for aguardando_pagamento ou pendente, NÃO ocupa o horário
+                if (status === "aguardando_pagamento" || status === "pendente") {
+                    console.log(`🟢 Horário ${horario} está ${status}, NÃO ocupa (pagamento pendente)`);
+                    continue;
+                }
+                
+                // Verificar se o status ocupa o horário (apenas CONFIRMADO)
+                const statusOcupados = ["confirmado"];
                 if (statusOcupados.includes(status)) {
                     horarioOcupado = true;
                     motivoOcupado = `status: ${status}`;
@@ -1818,16 +1832,12 @@ window.addEventListener('storage', (e) => {
 window.forcarRecarregamentoHorarios = function() {
     console.log("🔄 Forçando recarregamento dos horários...");
     if (typeof atualizarHorarios === 'function') {
-        // Limpar cache local
         localStorage.removeItem('horariosCache');
         localStorage.removeItem('ultimaAtualizacaoHorarios');
-        
-        // Forçar atualização
         setTimeout(() => atualizarHorarios(), 200);
     }
 };
 
-// Listener para recarregar quando a página for focada
 document.addEventListener('visibilitychange', () => {
     if (!document.hidden) {
         console.log("👁️ Página ficou visível, recarregando horários...");
@@ -1842,6 +1852,7 @@ console.log("📋 Horários Segunda à Quarta:", horariosSegundaQuarta);
 console.log("📋 Horários Quinta à Sábado:", horariosQuintaSabado);
 console.log("🔒 Sistema de bloqueios integrado!");
 console.log("👨‍👦 MODAL para seleção de múltiplos clientes com mesmo telefone!");
-console.log("✅ FILTRO DE HORÁRIOS: Ignora agendamentos com status ausente/cancelado!");
+console.log("✅ FILTRO DE HORÁRIOS: Ignora agendamentos com status ausente/cancelado/aguardando_pagamento/pendente!");
 console.log("🔓 HORÁRIOS LIBERADOS: Agendamentos com horarioLiberado=true NÃO bloqueiam mais!");
+console.log("✅ APENAS agendamentos CONFIRMADOS (pagamento finalizado) ocupam horário!");
 console.log("🔄 Função forcarRecarregamentoHorarios() disponível para debug!");
