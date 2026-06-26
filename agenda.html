@@ -179,6 +179,15 @@
                         <div id="cancelados" class="appointment-list"></div>
                     </section>
                 </div>
+
+                <!-- LISTA DE ESPERA -->
+                <div class="lista-espera-container">
+                    <h3 class="lista-espera-header">
+                        <i class="fa-solid fa-clock"></i> Lista de Espera
+                        <span id="countListaEspera" class="badge-count">0</span>
+                    </h3>
+                    <div id="listaEsperaContainer" class="appointment-list"></div>
+                </div>
             </div>
         </main>
     </div>
@@ -196,10 +205,7 @@
     <audio id="notificationSound" src="assets/Alerta-agendamento.mp3" preload="auto"></audio>
 
     <script type="module" src="agenda.js"></script>
-
-    <!-- Adicionar antes do fechamento do body -->
     <script type="module" src="floating-caixa.js"></script>
-    <!-- Adicione após os outros CSS -->
     <link rel="stylesheet" href="floating-caixa.css">
 
     <!-- Modal de Confirmação de Envio de Lembrete -->

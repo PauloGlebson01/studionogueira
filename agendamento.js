@@ -1,6 +1,7 @@
 // agendamento.js - Versão CORRIGIDA com VERIFICAÇÃO DE HORÁRIOS LIBERADOS
 // Agendamentos com status CANCELADO ou AUSENTE ou horarioLiberado=true NÃO bloqueiam mais os horários
 // CORREÇÃO: Apenas agendamentos CONFIRMADOS ocupam horário (pagamento finalizado)
+// NOVIDADE: Lista de Espera integrada com botão e modais
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { 
@@ -59,6 +60,17 @@ const valorTotalServicosSpan = document.getElementById("valorTotalServicos");
 const modalSelecionarCliente = document.getElementById("modalSelecionarCliente");
 const listaClientesModal = document.getElementById("listaClientesModal");
 const btnFecharModal = document.getElementById("btnFecharModal");
+
+// Elementos da Lista de Espera
+const modalListaEspera = document.getElementById("modalListaEspera");
+const modalListaConfirmada = document.getElementById("modalListaConfirmada");
+const btnCancelarLista = document.getElementById("btnCancelarLista");
+const btnConfirmarLista = document.getElementById("btnConfirmarLista");
+const btnFecharListaConfirmada = document.getElementById("btnFecharListaConfirmada");
+const listaDataDisplay = document.getElementById("listaDataDisplay");
+const listaProfissionalDisplay = document.getElementById("listaProfissionalDisplay");
+const listaServicosDisplay = document.getElementById("listaServicosDisplay");
+const listaClienteDisplay = document.getElementById("listaClienteDisplay");
 
 // Variáveis de controle
 let clienteSelecionadoParaAgendamento = null;
@@ -124,6 +136,24 @@ function formatarTelefone(valor) {
     if (v.length >= 2) v = `(${v.slice(0, 2)}) ${v.slice(2)}`;
     if (v.length >= 8) v = v.replace(/(\(\d{2}\) \d{5})(\d)/, "$1-$2");
     return v.slice(0, 16);
+}
+
+function formatarData(dataStr) {
+    if (!dataStr) return 'Data não informada';
+    if (dataStr.toDate) {
+        const date = dataStr.toDate();
+        return `${date.getDate().toString().padStart(2, '0')}/${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getFullYear()}`;
+    }
+    if (typeof dataStr === 'string') {
+        if (dataStr.includes('-')) {
+            const [ano, mes, dia] = dataStr.split('-');
+            return `${dia}/${mes}/${ano}`;
+        }
+        if (dataStr.includes('/')) {
+            return dataStr;
+        }
+    }
+    return 'Data inválida';
 }
 
 // ==================== FUNÇÕES DO MODAL ====================
@@ -1197,6 +1227,113 @@ function configurarDataMinima() {
     dataInput.min = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
 }
 
+// ==================== FUNÇÕES DA LISTA DE ESPERA ====================
+
+async function adicionarListaEspera(dados) {
+    try {
+        const listaRef = collection(db, "lista_espera");
+        
+        // Verificar se o cliente já está na lista para este dia/profissional
+        const q = query(
+            listaRef,
+            where("clienteId", "==", dados.clienteId || ""),
+            where("dataDesejada", "==", dados.dataDesejada),
+            where("profissionalId", "==", dados.profissionalId),
+            where("status", "==", "pendente")
+        );
+        const snapshot = await getDocs(q);
+        
+        if (!snapshot.empty) {
+            mostrarMensagem("⚠️ Você já está na lista de espera para este dia e barbeiro.", "erro");
+            return false;
+        }
+        
+        const docRef = await addDoc(listaRef, {
+            clienteId: dados.clienteId || null,
+            clienteNome: dados.clienteNome,
+            telefone: dados.telefone,
+            servicos: dados.servicos || [],
+            profissionalId: dados.profissionalId,
+            profissionalNome: dados.profissionalNome,
+            dataDesejada: dados.dataDesejada,
+            horarioPreferido: dados.horarioPreferido || null,
+            status: "pendente",
+            dataEntrada: Timestamp.now(),
+            tentativasNotificacao: 0,
+            prioridade: 0,
+            observacao: dados.observacao || "",
+            createdAt: Timestamp.now(),
+            updatedAt: Timestamp.now()
+        });
+        
+        console.log(`✅ Cliente adicionado à lista de espera: ${docRef.id}`);
+        return true;
+        
+    } catch (error) {
+        console.error("❌ Erro ao adicionar à lista de espera:", error);
+        mostrarMensagem("Erro ao adicionar à lista de espera: " + error.message, "erro");
+        return false;
+    }
+}
+
+function abrirModalListaEspera() {
+    const data = dataInput?.value;
+    const profissional = profissionalSelect?.options[profissionalSelect.selectedIndex];
+    const profissionalNome = profissional?.getAttribute('data-nome') || profissional?.textContent || "Selecionado";
+    const nome = nomeInput?.value.trim() || "Cliente";
+    
+    let servicosNomes = [];
+    document.querySelectorAll('.servico-select').forEach(select => {
+        if (select.value) servicosNomes.push(select.value);
+    });
+    
+    if (listaDataDisplay) listaDataDisplay.textContent = formatarData(data);
+    if (listaProfissionalDisplay) listaProfissionalDisplay.textContent = profissionalNome;
+    if (listaServicosDisplay) listaServicosDisplay.textContent = servicosNomes.join(", ") || "Não informado";
+    if (listaClienteDisplay) listaClienteDisplay.textContent = nome;
+    
+    if (modalListaEspera) {
+        modalListaEspera.style.display = "flex";
+        console.log("📋 Modal da lista de espera aberto");
+    } else {
+        console.error("❌ Modal da lista de espera não encontrado");
+        mostrarMensagem("Erro ao abrir a lista de espera. Tente novamente.", "erro");
+    }
+}
+
+function fecharModalListaEspera() {
+    if (modalListaEspera) modalListaEspera.style.display = "none";
+}
+
+function abrirModalListaConfirmada() {
+    if (modalListaConfirmada) modalListaConfirmada.style.display = "flex";
+}
+
+function fecharModalListaConfirmada() {
+    if (modalListaConfirmada) modalListaConfirmada.style.display = "none";
+}
+
+function adicionarEventoBotaoListaEspera() {
+    setTimeout(() => {
+        const btn = document.getElementById("btnEntrarListaEspera");
+        if (btn) {
+            const novoBtn = btn.cloneNode(true);
+            btn.parentNode.replaceChild(novoBtn, btn);
+            
+            novoBtn.addEventListener("click", function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log("🔘 Botão da lista de espera clicado!");
+                abrirModalListaEspera();
+            });
+            console.log("✅ Evento do botão lista de espera adicionado com sucesso!");
+        } else {
+            console.log("⏳ Botão da lista de espera ainda não existe, tentando novamente...");
+            setTimeout(adicionarEventoBotaoListaEspera, 500);
+        }
+    }, 100);
+}
+
 // ==================== ATUALIZAR HORÁRIOS (CORRIGIDO) ====================
 async function atualizarHorarios() {
     const data = dataInput.value;
@@ -1230,7 +1367,6 @@ async function atualizarHorarios() {
     horariosDiv.innerHTML = '<div class="loading-horarios"><i class="fas fa-spinner fa-spin"></i> Verificando horários disponíveis...</div>';
     
     try {
-        // Buscar bloqueios
         const bloqueios = await buscarBloqueios(data, profissionalId);
         console.log(`🔒 Bloqueios encontrados para ${data}:`, bloqueios.length);
         
@@ -1246,8 +1382,16 @@ async function atualizarHorarios() {
                     <i class="fa-solid fa-store-slash"></i>
                     <p><strong>⚠️ Estabelecimento fechado neste dia</strong></p>
                     <p style="font-size: 0.8rem; margin-top: 8px;">${motivoBloqueio}</p>
+                    <button id="btnEntrarListaEspera" class="btn-primary" 
+                            style="background: linear-gradient(135deg, #f59e0b, #d97706); margin-top: 16px; width: 100%;">
+                        <i class="fa-solid fa-clock"></i> Entrar na Lista de Espera
+                    </button>
+                    <p style="font-size: 0.7rem; color: #64748b; margin-top: 8px;">
+                        🔔 Você será avisado automaticamente quando surgir uma vaga!
+                    </p>
                 </div>
             `;
+            adicionarEventoBotaoListaEspera();
             return;
         }
         
@@ -1262,7 +1406,6 @@ async function atualizarHorarios() {
         }
         console.log(`🔒 Total de horários bloqueados manualmente: ${horariosBloqueadosManualmente.size}`);
         
-        // ========== BUSCAR TODOS OS AGENDAMENTOS ==========
         const agendamentosRef = collection(db, "agendamentos");
         
         const q = query(
@@ -1273,10 +1416,6 @@ async function atualizarHorarios() {
         
         const snapshot = await getDocs(q);
         
-        // ========== STATUS QUE OCUPAM HORÁRIO ==========
-        // CORREÇÃO: Agora apenas CONFIRMADO ocupa o horário (pagamento finalizado)
-        // Agendamentos com horarioLiberado = true NUNCA bloqueiam
-        // Agendamentos com status cancelado ou ausente NUNCA bloqueiam
         const statusOcupados = ["confirmado"];
         const horariosOcupados = [];
         
@@ -1291,25 +1430,21 @@ async function atualizarHorarios() {
             const horario = agendamento.horario;
             const horarioLiberado = agendamento.horarioLiberado === true;
             
-            // PRIORIDADE MÁXIMA: Se horarioLiberado = true, IGNORAR completamente
             if (horarioLiberado) {
                 console.log(`   🟢 HORÁRIO LIBERADO (IGNORADO): ${horario} (status: ${status}, horarioLiberado: true)`);
                 return;
             }
             
-            // Se o status for cancelado ou ausente, NÃO considerar como ocupado
             if (status === "cancelado" || status === "ausente") {
                 console.log(`   🟢 IGNORADO/LIBERADO: ${horario} (status: ${status})`);
                 return;
             }
             
-            // Se o status for aguardando_pagamento ou pendente, NÃO considerar como ocupado
             if (status === "aguardando_pagamento" || status === "pendente") {
                 console.log(`   🟢 IGNORADO (pagamento pendente): ${horario} (status: ${status})`);
                 return;
             }
             
-            // Para os demais status, verificar se estão na lista de ocupados
             if (statusOcupados.includes(status)) {
                 if (horario) {
                     horariosOcupados.push({
@@ -1332,7 +1467,6 @@ async function atualizarHorarios() {
         const horariosIndisponiveis = [];
         
         for (const horarioBase of infoAtendimento.horarios) {
-            // Verificar bloqueio manual
             if (horariosBloqueadosManualmente.has(horarioBase)) {
                 console.log(`   🔒 BLOQUEADO (manual): ${horarioBase}`);
                 horariosIndisponiveis.push(horarioBase);
@@ -1347,7 +1481,6 @@ async function atualizarHorarios() {
                 continue;
             }
             
-            // Verificar conflito com agendamentos ocupados
             let conflito = false;
             for (const ocupado of horariosOcupados) {
                 const ocupadoInicio = horarioParaMinutos(ocupado.horario);
@@ -1377,6 +1510,7 @@ async function atualizarHorarios() {
     }
 }
 
+// ==================== RENDERIZAR HORÁRIOS (CORRIGIDO COM BOTÃO LISTA DE ESPERA) ====================
 function renderizarHorarios(horariosDisponiveis = [], horariosIndisponiveis = [], infoAtendimento, duracaoTotal) {
     const nomeDia = getNomeDiaSemana(dataInput.value);
     
@@ -1396,6 +1530,7 @@ function renderizarHorarios(horariosDisponiveis = [], horariosIndisponiveis = []
     `;
     horariosDiv.appendChild(infoHeader);
     
+    // ========== CORREÇÃO: BOTÃO DA LISTA DE ESPERA QUANDO NÃO HÁ HORÁRIOS ==========
     if (horariosDisponiveis.length === 0) {
         const avisoDiv = document.createElement('div');
         avisoDiv.className = 'aviso-campos';
@@ -1403,12 +1538,24 @@ function renderizarHorarios(horariosDisponiveis = [], horariosIndisponiveis = []
             <i class="fa-solid fa-clock"></i>
             <p>Nenhum horário disponível para esta data</p>
             <p style="font-size: 0.7rem; margin-top: 8px;">Tente outra data ou horário</p>
-            ${horariosIndisponiveis.length > 0 ? `<p style="font-size: 0.65rem; margin-top: 8px; color:#c2410c;">Horários ocupados: ${horariosIndisponiveis.join(', ')}</p>` : ''}
+            <button id="btnEntrarListaEspera" class="btn-primary" 
+                    style="background: linear-gradient(135deg, #f59e0b, #d97706); margin-top: 16px; width: 100%;">
+                <i class="fa-solid fa-clock"></i> Entrar na Lista de Espera
+            </button>
+            <p style="font-size: 0.7rem; color: #64748b; margin-top: 8px;">
+                🔔 Você será avisado automaticamente quando surgir uma vaga!
+            </p>
+            ${horariosIndisponiveis.length > 0 ? 
+                `<p style="font-size: 0.65rem; margin-top: 8px; color:#c2410c;">Horários ocupados: ${horariosIndisponiveis.join(', ')}</p>` : ''}
         `;
         horariosDiv.appendChild(avisoDiv);
+        
+        // Adicionar evento ao botão criado dinamicamente
+        adicionarEventoBotaoListaEspera();
         return;
     }
     
+    // ========== SE HOUVER HORÁRIOS DISPONÍVEIS ==========
     const containerBotoes = document.createElement('div');
     containerBotoes.className = 'botoes-horarios';
     
@@ -1492,7 +1639,109 @@ onAuthStateChanged(auth, async (user) => {
     }
 });
 
-// ==================== SUBMIT DO FORMULÁRIO (CORRIGIDO) ====================
+// ==================== EVENTOS DA LISTA DE ESPERA ====================
+
+if (btnCancelarLista) {
+    btnCancelarLista.addEventListener("click", fecharModalListaEspera);
+}
+
+if (btnConfirmarLista) {
+    btnConfirmarLista.addEventListener("click", async function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        console.log("🔘 Botão confirmar lista de espera clicado!");
+        
+        const nome = nomeInput?.value.trim();
+        const telefone = telefoneInput?.value.trim();
+        const data = dataInput?.value;
+        const profissionalId = profissionalSelect?.value;
+        const profissionalNome = profissionalSelect?.options[profissionalSelect.selectedIndex]?.getAttribute('data-nome') || "";
+        
+        if (!nome) {
+            mostrarMensagem("❌ Preencha seu nome antes de entrar na lista de espera.", "erro");
+            return;
+        }
+        
+        if (!telefone || telefone.replace(/\D/g, "").length < 10) {
+            mostrarMensagem("❌ Preencha um telefone válido antes de entrar na lista de espera.", "erro");
+            return;
+        }
+        
+        if (!data) {
+            mostrarMensagem("❌ Selecione uma data antes de entrar na lista de espera.", "erro");
+            return;
+        }
+        
+        if (!profissionalId) {
+            mostrarMensagem("❌ Selecione um barbeiro antes de entrar na lista de espera.", "erro");
+            return;
+        }
+        
+        let servicosLista = [];
+        document.querySelectorAll('.servico-select').forEach(select => {
+            if (select.value) {
+                const option = select.options[select.selectedIndex];
+                servicosLista.push({
+                    nome: select.value,
+                    preco: parseFloat(option?.getAttribute('data-preco') || 0)
+                });
+            }
+        });
+        
+        if (servicosLista.length === 0) {
+            mostrarMensagem("❌ Selecione pelo menos um serviço.", "erro");
+            return;
+        }
+        
+        let clienteId = null;
+        try {
+            const clienteExistente = await buscarClientePorTelefoneENome(telefone, nome);
+            clienteId = clienteExistente?.id || null;
+        } catch (error) {
+            console.error("Erro ao buscar cliente:", error);
+        }
+        
+        const dados = {
+            clienteId: clienteId,
+            clienteNome: nome,
+            telefone: telefone,
+            servicos: servicosLista,
+            profissionalId: profissionalId,
+            profissionalNome: profissionalNome,
+            dataDesejada: data,
+            horarioPreferido: null,
+            observacao: observacaoGeral?.value || ""
+        };
+        
+        console.log("📝 Dados para lista de espera:", dados);
+        
+        const sucesso = await adicionarListaEspera(dados);
+        
+        fecharModalListaEspera();
+        
+        if (sucesso) {
+            abrirModalListaConfirmada();
+            setTimeout(() => {
+                const btn = document.getElementById("btnEntrarListaEspera");
+                if (btn) btn.style.display = "none";
+            }, 100);
+        } else {
+            mostrarMensagem("❌ Erro ao adicionar à lista de espera. Tente novamente.", "erro");
+        }
+    });
+}
+
+if (btnFecharListaConfirmada) {
+    btnFecharListaConfirmada.addEventListener("click", fecharModalListaConfirmada);
+}
+
+window.addEventListener("click", (e) => {
+    if (e.target === modalListaEspera) fecharModalListaEspera();
+    if (e.target === modalListaConfirmada) fecharModalListaConfirmada();
+});
+
+// ==================== SUBMIT DO FORMULÁRIO ====================
 if (form) {
     form.addEventListener("submit", async (e) => {
         e.preventDefault();
@@ -1518,7 +1767,6 @@ if (form) {
         if (data && horario && profissionalId) {
             const agendamentosRef = collection(db, "agendamentos");
             
-            // Buscar TODOS os agendamentos para verificar se o horário está realmente ocupado
             const q = query(
                 agendamentosRef, 
                 where("data", "==", data), 
@@ -1527,7 +1775,6 @@ if (form) {
             );
             const existingSnap = await getDocs(q);
             
-            // Verificar se algum agendamento ocupa este horário
             let horarioOcupado = false;
             let motivoOcupado = "";
             
@@ -1538,25 +1785,21 @@ if (form) {
                 
                 console.log(`📋 Verificando agendamento: status=${status}, horarioLiberado=${horarioLiberado}`);
                 
-                // Se horarioLiberado = true, NÃO ocupa o horário
                 if (horarioLiberado) {
                     console.log(`🟢 Horário ${horario} foi LIBERADO (horarioLiberado=true)`);
                     continue;
                 }
                 
-                // Se status for cancelado ou ausente, NÃO ocupa o horário
                 if (status === "cancelado" || status === "ausente") {
                     console.log(`🟢 Horário ${horario} está ${status}, NÃO ocupa`);
                     continue;
                 }
                 
-                // Se status for aguardando_pagamento ou pendente, NÃO ocupa o horário
                 if (status === "aguardando_pagamento" || status === "pendente") {
                     console.log(`🟢 Horário ${horario} está ${status}, NÃO ocupa (pagamento pendente)`);
                     continue;
                 }
                 
-                // Verificar se o status ocupa o horário (apenas CONFIRMADO)
                 const statusOcupados = ["confirmado"];
                 if (statusOcupados.includes(status)) {
                     horarioOcupado = true;
@@ -1828,7 +2071,6 @@ window.addEventListener('storage', (e) => {
     }
 });
 
-// ==================== FUNÇÃO PARA FORÇAR RECARREGAMENTO DOS HORÁRIOS ====================
 window.forcarRecarregamentoHorarios = function() {
     console.log("🔄 Forçando recarregamento dos horários...");
     if (typeof atualizarHorarios === 'function') {
@@ -1855,4 +2097,5 @@ console.log("👨‍👦 MODAL para seleção de múltiplos clientes com mesmo t
 console.log("✅ FILTRO DE HORÁRIOS: Ignora agendamentos com status ausente/cancelado/aguardando_pagamento/pendente!");
 console.log("🔓 HORÁRIOS LIBERADOS: Agendamentos com horarioLiberado=true NÃO bloqueiam mais!");
 console.log("✅ APENAS agendamentos CONFIRMADOS (pagamento finalizado) ocupam horário!");
+console.log("⏳ LISTA DE ESPERA: Funcionalidade integrada com botão e modais!");
 console.log("🔄 Função forcarRecarregamentoHorarios() disponível para debug!");

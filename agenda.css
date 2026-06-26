@@ -645,28 +645,235 @@
     }
 }
 
-/* Responsividade */
-@media (max-width: 1200px) {
-    .appointments-table {
-        min-width: 1000px;
-    }
+/* ===== ESTILOS DA LISTA DE ESPERA ===== */
+.lista-espera-container {
+    margin-top: 24px;
+    background: #FFFFFF;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
 }
 
-@media (max-width: 768px) {
-    .container-fluid {
-        padding: 16px;
-    }
-    
-    .filter-row {
-        flex-direction: column;
-        align-items: stretch;
-    }
-    
-    .filter-group {
-        justify-content: center;
-    }
-    
-    .filter-buttons {
-        justify-content: center;
-    }
+.lista-espera-header {
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    color: white;
+    padding: 16px 20px;
+    margin: 0;
+    font-size: 0.9rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.lista-espera-header i {
+    font-size: 1rem;
+}
+
+.badge-count {
+    background: rgba(255, 255, 255, 0.25);
+    padding: 2px 12px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+}
+
+.status-badge-pendente {
+    display: inline-block;
+    background: #fef3c7;
+    color: #92400e;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 0.65rem;
+    font-weight: 600;
+}
+
+.status-badge-notificado {
+    display: inline-block;
+    background: #dbeafe;
+    color: #1e40af;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 0.65rem;
+    font-weight: 600;
+}
+
+.status-badge-removido {
+    display: inline-block;
+    background: #f1f5f9;
+    color: #64748b;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 0.65rem;
+    font-weight: 600;
+}
+
+/* CORREÇÃO: Textos mais claros e visíveis na lista de espera */
+.cliente-telefone-lista {
+    font-size: 0.7rem;
+    color: #1e293b;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-weight: 500;
+}
+
+.cliente-telefone-lista i {
+    color: #25D366;
+    font-size: 0.8rem;
+}
+
+/* CORREÇÃO: Nome do cliente mais visível */
+.lista-espera-container .cliente-nome {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+/* CORREÇÃO: Células da tabela da lista de espera */
+.lista-espera-container td {
+    padding: 14px 12px;
+    vertical-align: middle;
+    color: #1e293b;
+    font-size: 0.85rem;
+}
+
+.lista-espera-container td strong {
+    color: #0f172a;
+    font-size: 0.95rem;
+}
+
+.lista-espera-container td small {
+    color: #475569;
+    font-size: 0.7rem;
+}
+
+/* CORREÇÃO: Badge de status */
+.status-badge-pendente {
+    display: inline-block;
+    background: #fef3c7;
+    color: #92400e;
+    padding: 3px 12px;
+    border-radius: 20px;
+    font-size: 0.7rem;
+    font-weight: 600;
+}
+
+.status-badge-notificado {
+    display: inline-block;
+    background: #dbeafe;
+    color: #1e40af;
+    padding: 3px 12px;
+    border-radius: 20px;
+    font-size: 0.7rem;
+    font-weight: 600;
+}
+
+.status-badge-removido {
+    display: inline-block;
+    background: #f1f5f9;
+    color: #64748b;
+    padding: 3px 12px;
+    border-radius: 20px;
+    font-size: 0.7rem;
+    font-weight: 600;
+}
+
+/* CORREÇÃO: Botões da lista de espera */
+.btn-notificar {
+    background: #10b981;
+    color: #ffffff;
+    border: none;
+    padding: 6px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.7rem;
+    font-weight: 600;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+
+.btn-notificar:hover {
+    background: #059669;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
+.btn-remover-lista {
+    background: #ef4444;
+    color: #ffffff;
+    border: none;
+    padding: 6px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.7rem;
+    font-weight: 600;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+
+.btn-remover-lista:hover {
+    background: #dc2626;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+}
+
+/* CORREÇÃO: Tabela da lista de espera - cabeçalho */
+.lista-espera-container .appointments-table th {
+    background: #f1f5f9;
+    color: #1e293b;
+    font-weight: 700;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 12px 12px;
+}
+
+/* CORREÇÃO: Linhas da tabela */
+.lista-espera-container .appointment-row:hover {
+    background: #f8fafc;
+}
+
+/* CORREÇÃO: Data e hora na lista de espera */
+.lista-espera-container .data-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.lista-espera-container .data-info .data {
+    font-weight: 600;
+    color: #0f172a;
+    font-size: 0.85rem;
+}
+
+.lista-espera-container .data-info .hora {
+    font-size: 0.7rem;
+    color: #475569;
+}
+
+/* CORREÇÃO: Container vazio */
+.lista-espera-container .empty-agenda {
+    padding: 40px 20px;
+    text-align: center;
+    color: #94a3b8;
+}
+
+.lista-espera-container .empty-agenda i {
+    font-size: 2.5rem;
+    color: #cbd5e1;
+    display: block;
+    margin-bottom: 12px;
+}
+
+.lista-espera-container .empty-agenda p {
+    color: #94a3b8;
+    font-size: 0.95rem;
 }

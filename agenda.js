@@ -3,6 +3,7 @@
 // CORREÇÃO: URL de avaliação corrigida (sem duplicação)
 // VERSÃO: Layout Horizontal em Tabela com Dia da Semana Corrigido
 // CORREÇÃO v2: Removidos botões "Ausente" e "Cancelar" - gestão feita apenas na comanda
+// NOVIDADE: Lista de Espera integrada com notificação automática - SEM ÍNDICES COMPOSTOS
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
@@ -1573,11 +1574,300 @@ function pararVerificacaoLembretes() {
     console.log("🛑 Sistema de verificação de lembretes parado");
 }
 
+// ==================== FUNÇÕES DA LISTA DE ESPERA (SEM ÍNDICES COMPOSTOS) ====================
+
+/**
+ * Renderiza a lista de espera na agenda - Versão SEM ÍNDICES COMPOSTOS
+ */
+function renderizarListaEspera() {
+    const container = document.getElementById("listaEsperaContainer");
+    if (!container) {
+        console.log("⚠️ Container da lista de espera não encontrado");
+        return;
+    }
+    
+    // Usar apenas um filtro por vez para evitar necessidade de índices compostos
+    const q = query(
+        collection(db, "lista_espera"),
+        where("status", "==", "pendente")
+    );
+    
+    onSnapshot(q, (snapshot) => {
+        container.innerHTML = "";
+        
+        const countBadge = document.getElementById("countListaEspera");
+        
+        // Filtrar e ordenar em memória
+        const itens = [];
+        snapshot.forEach(doc => {
+            const data = { id: doc.id, ...doc.data() };
+            // Garantir que só mostra pendentes (já filtrado pelo where)
+            if (data.status === "pendente") {
+                itens.push(data);
+            }
+        });
+        
+        // Ordenar por dataEntrada (mais antigo primeiro)
+        itens.sort((a, b) => {
+            const dateA = a.dataEntrada?.toDate?.() || new Date(0);
+            const dateB = b.dataEntrada?.toDate?.() || new Date(0);
+            return dateA - dateB;
+        });
+        
+        if (countBadge) countBadge.textContent = itens.length;
+        
+        if (itens.length === 0) {
+            container.innerHTML = `
+                <div class="empty-agenda">
+                    <i class="fa-regular fa-clock"></i>
+                    <p>Nenhum cliente na lista de espera</p>
+                </div>
+            `;
+            return;
+        }
+        
+        const table = document.createElement("table");
+        table.className = "appointments-table";
+        table.innerHTML = `
+            <thead>
+                <tr>
+                    <th>Cliente</th>
+                    <th>Data Desejada</th>
+                    <th>Serviços</th>
+                    <th>Barbeiro</th>
+                    <th>Entrada</th>
+                    <th>Status</th>
+                    <th>Ações</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        `;
+        
+        const tbody = table.querySelector("tbody");
+        
+        itens.forEach(item => {
+            const tr = document.createElement("tr");
+            
+            const dataEntrada = item.dataEntrada?.toDate?.() || new Date();
+            const dataFormatada = dataEntrada.toLocaleDateString('pt-BR');
+            const horaFormatada = dataEntrada.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+            
+            const servicosNomes = item.servicos?.map(s => s.nome).join(', ') || 'Não informado';
+            const telefone = item.telefone || '';
+            
+            let statusBadge = '';
+            if (item.status === 'pendente') {
+                statusBadge = '<span class="status-badge-pendente">⏳ Pendente</span>';
+            } else if (item.status === 'notificado') {
+                statusBadge = '<span class="status-badge-notificado">📨 Notificado</span>';
+            } else if (item.status === 'removido') {
+                statusBadge = '<span class="status-badge-removido">🗑️ Removido</span>';
+            } else {
+                statusBadge = `<span class="status-badge-pendente">${item.status}</span>`;
+            }
+            
+            tr.innerHTML = `
+                <td>
+                    <strong>${escapeHtml(item.clienteNome)}</strong>
+                    ${telefone ? `<div class="cliente-telefone-lista"><i class="fa-brands fa-whatsapp"></i> ${escapeHtml(telefone)}</div>` : ''}
+                </td>
+                <td>${formatarData(item.dataDesejada)}</td>
+                <td style="font-size: 0.8rem;">${escapeHtml(servicosNomes)}</td>
+                <td>${escapeHtml(item.profissionalNome)}</td>
+                <td><small>${dataFormatada} ${horaFormatada}</small></td>
+                <td>${statusBadge}</td>
+                <td>
+                    <div class="appointment-actions">
+                        <button class="btn-notificar" data-id="${item.id}" data-telefone="${telefone}" 
+                                data-nome="${item.clienteNome}" data-data="${item.dataDesejada}"
+                                data-profissional="${item.profissionalNome}">
+                            <i class="fa-brands fa-whatsapp"></i> Notificar
+                        </button>
+                        <button class="btn-remover-lista" data-id="${item.id}">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                    </div>
+                </td>
+            `;
+            
+            // Evento Notificar
+            tr.querySelector(".btn-notificar")?.addEventListener("click", async (e) => {
+                e.stopPropagation();
+                const btn = e.currentTarget;
+                const id = btn.dataset.id;
+                const telefone = btn.dataset.telefone;
+                const nome = btn.dataset.nome;
+                const data = btn.dataset.data;
+                const profissional = btn.dataset.profissional;
+                
+                if (!telefone) {
+                    mostrarToast("❌ Telefone não cadastrado para este cliente", "erro");
+                    return;
+                }
+                
+                const telefoneLimpo = limparTelefone(telefone);
+                if (!telefoneLimpo) {
+                    mostrarToast("❌ Telefone inválido", "erro");
+                    return;
+                }
+                
+                const mensagem = `🏢 STUDIO NOGUEIRA\n\nOlá, *${nome}*! 🎉\n\nUma vaga foi liberada para *${formatarData(data)}* com o barbeiro *${profissional}*!\n\n🔗 Agende agora: https://studionogueira.vercel.app/agendamento.html\n\n⏱️ Você tem 15 minutos para confirmar a vaga.\n\n*Studio Nogueira* - Mais de 10 anos transformando estilos. ✂️💈`;
+                
+                window.open(`https://wa.me/${telefoneLimpo}?text=${encodeURIComponent(mensagem)}`, '_blank');
+                
+                try {
+                    await updateDoc(doc(db, "lista_espera", id), {
+                        status: "notificado",
+                        dataNotificacao: Timestamp.now(),
+                        tentativasNotificacao: (item.tentativasNotificacao || 0) + 1,
+                        updatedAt: Timestamp.now()
+                    });
+                    
+                    mostrarToast(`✅ Cliente ${nome} notificado!`, "sucesso");
+                } catch (error) {
+                    console.error("Erro ao atualizar status:", error);
+                    mostrarToast("Cliente notificado, mas erro ao atualizar status", "erro");
+                }
+            });
+            
+            // Evento Remover
+            tr.querySelector(".btn-remover-lista")?.addEventListener("click", async (e) => {
+                e.stopPropagation();
+                const id = e.currentTarget.dataset.id;
+                if (confirm("Deseja remover este cliente da lista de espera?")) {
+                    try {
+                        await updateDoc(doc(db, "lista_espera", id), {
+                            status: "removido",
+                            updatedAt: Timestamp.now()
+                        });
+                        mostrarToast("✅ Cliente removido da lista de espera", "sucesso");
+                    } catch (error) {
+                        console.error("Erro ao remover:", error);
+                        mostrarToast("❌ Erro ao remover cliente", "erro");
+                    }
+                }
+            });
+            
+            tbody.appendChild(tr);
+        });
+        
+        container.appendChild(table);
+    }, (error) => {
+        console.error("Erro ao carregar lista de espera:", error);
+        container.innerHTML = `
+            <div class="error-agenda">
+                <i class="fa-solid fa-circle-exclamation"></i>
+                <p>Erro ao carregar lista de espera: ${error.message}</p>
+                <p style="font-size: 0.8rem; margin-top: 8px; color: #f59e0b;">
+                    <i class="fa-solid fa-lightbulb"></i>
+                    Crie o índice necessário clicando no link abaixo:
+                </p>
+                <a href="https://console.firebase.google.com/v1/r/project/studio-nogueira-e07bb/firestore/indexes?create_composite=Clhwcm9qZWN0cy9zdHVkaW8tbm9ndWVpcmEtZTA3YmIvZGF0YWJhc2VzLyhkZWZhdWx0KS9jb2xsZWN0aW9uR3JvdXBzL2xpc3RhX2VzcGVyYS9pbmRleGVzL18QARoKCgZzdGF0dXMQA RoPCgtkYXRhRW50cmFkYREBGgwKCF9fbmFtZV9fEAE" 
+                   target="_blank" style="color: #2199EF; text-decoration: underline;">
+                    🔗 Criar índice para lista_espera
+                </a>
+            </div>
+        `;
+    });
+}
+
+/**
+ * Inicia o detector de horários liberados para notificar a lista de espera
+ * Versão SEM ÍNDICES COMPOSTOS
+ */
+function iniciarDetectorHorariosLiberados() {
+    console.log("🔍 Iniciando detector de horários liberados para lista de espera...");
+    
+    const q = query(collection(db, "agendamentos"));
+    
+    onSnapshot(q, async (snapshot) => {
+        for (const change of snapshot.docChanges()) {
+            if (change.type === "modified") {
+                const newData = change.doc.data();
+                
+                // Verificar se o status mudou para cancelado ou ausente
+                const statusNovo = newData.status;
+                
+                if (statusNovo === "cancelado" || statusNovo === "ausente") {
+                    console.log(`🔓 Horário liberado: ${newData.data} às ${newData.horario} - ${newData.profissional}`);
+                    
+                    // Buscar TODOS os pendentes e filtrar em memória
+                    try {
+                        const listaQuery = query(
+                            collection(db, "lista_espera"),
+                            where("status", "==", "pendente")
+                        );
+                        
+                        const listaSnap = await getDocs(listaQuery);
+                        
+                        // Filtrar em memória por data e profissional
+                        const candidatos = [];
+                        listaSnap.forEach(doc => {
+                            const dados = { id: doc.id, ...doc.data() };
+                            if (dados.dataDesejada === newData.data && 
+                                dados.profissionalId === newData.profissionalId) {
+                                candidatos.push(dados);
+                            }
+                        });
+                        
+                        // Ordenar por dataEntrada
+                        candidatos.sort((a, b) => {
+                            const dateA = a.dataEntrada?.toDate?.() || new Date(0);
+                            const dateB = b.dataEntrada?.toDate?.() || new Date(0);
+                            return dateA - dateB;
+                        });
+                        
+                        if (candidatos.length > 0) {
+                            const primeiro = candidatos[0];
+                            
+                            console.log(`📨 Notificando ${primeiro.clienteNome} sobre vaga disponível`);
+                            
+                            const telefoneLimpo = limparTelefone(primeiro.telefone);
+                            if (telefoneLimpo) {
+                                const mensagem = `🏢 STUDIO NOGUEIRA\n\nOlá, *${primeiro.clienteNome}*! 🎉\n\nUma vaga foi liberada para *${formatarData(newData.data)}* às *${newData.horario}* com o barbeiro *${newData.profissional}*!\n\n🔗 Agende agora: https://studionogueira.vercel.app/agendamento.html?profissionalId=${newData.profissionalId}&data=${newData.data}\n\n⏱️ Você tem 15 minutos para confirmar a vaga.\n\n*Studio Nogueira* - Mais de 10 anos transformando estilos. ✂️💈`;
+                                
+                                window.open(`https://wa.me/${telefoneLimpo}?text=${encodeURIComponent(mensagem)}`, '_blank');
+                                
+                                await updateDoc(doc(db, "lista_espera", primeiro.id), {
+                                    status: "notificado",
+                                    dataNotificacao: Timestamp.now(),
+                                    tentativasNotificacao: (primeiro.tentativasNotificacao || 0) + 1,
+                                    updatedAt: Timestamp.now()
+                                });
+                                
+                                await addDoc(collection(db, "historico_notificacoes_lista"), {
+                                    listaId: primeiro.id,
+                                    clienteId: primeiro.clienteId,
+                                    clienteNome: primeiro.clienteNome,
+                                    dataAgendamento: newData.data,
+                                    horarioAgendamento: newData.horario,
+                                    profissionalId: newData.profissionalId,
+                                    profissionalNome: newData.profissional,
+                                    dataNotificacao: Timestamp.now(),
+                                    metodo: "whatsapp",
+                                    status: "enviado"
+                                });
+                                
+                                mostrarToast(`📨 ${primeiro.clienteNome} foi notificado sobre a vaga!`, "sucesso");
+                            }
+                        }
+                    } catch (error) {
+                        console.error("Erro ao processar lista de espera:", error);
+                    }
+                }
+            }
+        }
+    }, (error) => {
+        console.error("Erro no detector de horários liberados:", error);
+    });
+}
+
 // ==================== INICIALIZAÇÃO ====================
 
 document.addEventListener('DOMContentLoaded', () => {
     console.log("📅 Agenda.js iniciado - Versão com LEMBRETES WHATSAPP, LAYOUT HORIZONTAL E DIA DA SEMANA CORRIGIDO");
     console.log("ℹ️ Botões 'Ausente' e 'Cancelar' removidos - gestão apenas na comanda");
+    console.log("⏳ LISTA DE ESPERA integrada - SEM ÍNDICES COMPOSTOS!");
     
     if (dataInicio) dataInicio.value = '';
     if (dataFim) dataFim.value = '';
@@ -1585,6 +1875,12 @@ document.addEventListener('DOMContentLoaded', () => {
     aplicarFiltro();
     iniciarListenerComandas();
     iniciarVerificacaoLembretes();
+    
+    // Iniciar listener da lista de espera
+    renderizarListaEspera();
+    
+    // Iniciar detector de horários liberados
+    iniciarDetectorHorariosLiberados();
 });
 
 if (btnFiltrarPeriodo) btnFiltrarPeriodo.onclick = () => aplicarFiltro();
@@ -1618,3 +1914,4 @@ const logoutBtn = document.getElementById('logout');
 if (logoutBtn) logoutBtn.onclick = async () => { await signOut(auth); window.location.href = 'login.html'; };
 
 console.log("✅ Agenda.js carregado - Layout horizontal em tabela com dia da semana corrigido!");
+console.log("✅ Lista de Espera integrada com notificação automática - SEM ÍNDICES COMPOSTOS!");

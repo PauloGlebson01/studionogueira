@@ -158,6 +158,81 @@
         </div>
     </div>
 
+    <!-- MODAL PARA LISTA DE ESPERA -->
+    <div id="modalListaEspera" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 450px;">
+            <div class="modal-header" style="background: linear-gradient(135deg, #f59e0b, #d97706);">
+                <i class="fa-solid fa-clock" style="font-size: 1.8rem;"></i>
+                <h3 style="color: white;">Lista de Espera</h3>
+            </div>
+            <div class="modal-body">
+                <p style="font-weight: 600; color: #0f172a;">Não há horários disponíveis para o dia selecionado.</p>
+                <p>Deseja entrar na <strong style="color: #f59e0b;">lista de espera</strong>?</p>
+                <div style="background: #f8fafc; padding: 14px; border-radius: 14px; margin: 12px 0; border-left: 4px solid #f59e0b;">
+                    <p style="font-size: 0.85rem; margin: 4px 0;">
+                        📅 <strong>Data:</strong> <span id="listaDataDisplay"></span>
+                    </p>
+                    <p style="font-size: 0.85rem; margin: 4px 0;">
+                        👨‍🦱 <strong>Barbeiro:</strong> <span id="listaProfissionalDisplay"></span>
+                    </p>
+                    <p style="font-size: 0.85rem; margin: 4px 0;">
+                        ✂️ <strong>Serviços:</strong> <span id="listaServicosDisplay"></span>
+                    </p>
+                    <p style="font-size: 0.85rem; margin: 4px 0;">
+                        👤 <strong>Cliente:</strong> <span id="listaClienteDisplay"></span>
+                    </p>
+                </div>
+                <div style="background: #fef3c7; padding: 12px; border-radius: 12px; margin: 12px 0;">
+                    <p style="font-size: 0.8rem; color: #92400e; margin: 0;">
+                        <i class="fa-solid fa-info-circle"></i>
+                        Você receberá um <strong>aviso automático no WhatsApp</strong> quando uma vaga for liberada.
+                    </p>
+                </div>
+                <p style="font-size: 0.7rem; color: #64748b; margin: 8px 0 0 0;">
+                    ⏱️ Você tem <strong>10 minutos</strong> para confirmar a vaga após ser notificado.
+                </p>
+            </div>
+            <div class="modal-footer" style="display: flex; gap: 12px; justify-content: flex-end; padding: 16px 24px; border-top: 1px solid #e2e8f0;">
+                <button type="button" id="btnCancelarLista" class="btn-secundario">
+                    <i class="fa-solid fa-times"></i> Cancelar
+                </button>
+                <button type="button" id="btnConfirmarLista" class="btn-primary" style="background: linear-gradient(135deg, #f59e0b, #d97706);">
+                    <i class="fa-solid fa-check"></i> Entrar na Lista
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL DE CONFIRMAÇÃO DE ENTRADA NA LISTA -->
+    <div id="modalListaConfirmada" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 400px;">
+            <div class="modal-header" style="background: linear-gradient(135deg, #10b981, #059669);">
+                <i class="fa-solid fa-circle-check" style="font-size: 1.8rem;"></i>
+                <h3 style="color: white;">Lista de Espera Confirmada!</h3>
+            </div>
+            <div class="modal-body">
+                <div style="text-align: center; padding: 16px 0;">
+                    <i class="fa-solid fa-clock" style="font-size: 3rem; color: #10b981;"></i>
+                    <h3 style="margin: 12px 0 8px 0; color: #0f172a;">Você está na fila!</h3>
+                    <p style="color: #475569; font-size: 0.9rem;">
+                        Assim que uma vaga for liberada, você receberá um aviso no WhatsApp.
+                    </p>
+                </div>
+                <div style="background: #f8fafc; padding: 12px; border-radius: 12px; margin: 12px 0;">
+                    <p style="font-size: 0.8rem; color: #475569; margin: 0;">
+                        <i class="fa-solid fa-lightbulb" style="color: #f59e0b;"></i>
+                        <strong>Dica:</strong> Fique atento ao WhatsApp. Você terá 10 minutos para confirmar a vaga.
+                    </p>
+                </div>
+            </div>
+            <div class="modal-footer" style="display: flex; justify-content: center; padding: 16px 24px; border-top: 1px solid #e2e8f0;">
+                <button type="button" id="btnFecharListaConfirmada" class="btn-primary" style="background: linear-gradient(135deg, #10b981, #059669);">
+                    <i class="fa-solid fa-check"></i> Entendi
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script type="module" src="agendamento.js"></script>
 </body>
 
