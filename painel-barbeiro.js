@@ -1,4 +1,4 @@
-// painel-barbeiro.js - Versão Completa com Autenticação Integrada
+// painel-barbeiro.js - Versão LIMPA (sem diagnóstico)
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
@@ -9,7 +9,8 @@ import {
     getDocs,
     doc,
     getDoc,
-    orderBy
+    orderBy,
+    onSnapshot
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
     getAuth,
@@ -17,8 +18,7 @@ import {
     signInAnonymously
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
-//BANCO DE DADOS
-
+// CONFIGURAÇÕES DE DADOS
 const firebaseConfig = {
     apiKey: "AIzaSyC5xXm9T2nzh6xxZ5-zrMHfCNdqQOG8SZI",
     authDomain: "studio-nogueira-e07bb.firebaseapp.com",
@@ -37,6 +37,7 @@ let barbeiroId = null;
 let barbeiroData = null;
 let currentPage = 'dashboard';
 let authReady = false;
+let unsubscribeGorjetas = null;
 
 // Elementos DOM
 let conteudoDiv = null;
@@ -44,6 +45,13 @@ let barbeiroNomeSpan = null;
 let barbeiroFotoImg = null;
 let toast = null;
 let toastMsg = null;
+
+// Cache de gorjetas para uso global
+let cacheGorjetas = {
+    total: 0,
+    quantidade: 0,
+    ultimas: []
+};
 
 // ==================== FUNÇÕES AUXILIARES ====================
 
@@ -309,6 +317,185 @@ async function atualizarDadosFirestore() {
     }
 }
 
+// ==================== FUNÇÕES DE GORJETAS ====================
+
+/**
+ * Buscar gorjetas em TODAS as fontes possíveis
+ */
+async function buscarTodasGorjetas() {
+    console.log("🔍 Buscando gorjetas...");
+    
+    if (!barbeiroId) {
+        console.log("❌ Barbeiro ID não disponível");
+        return { total: 0, quantidade: 0, ultimasGorjetas: [] };
+    }
+    
+    let todasGorjetas = [];
+    let idsVistos = new Set();
+    
+    try {
+        // ===== FONTE 1: Comandas =====
+        const comandasRef = collection(db, "comandas");
+        const comandasSnapshot = await getDocs(comandasRef);
+        
+        comandasSnapshot.forEach(doc => {
+            const data = doc.data();
+            let valor = data.gorjeta || 0;
+            
+            if (typeof valor === 'string') {
+                valor = parseFloat(valor.replace(',', '.')) || 0;
+            }
+            valor = Number(valor) || 0;
+            
+            if (valor > 0) {
+                const temBarbeiroId = data.barbeiroId === barbeiroId;
+                const temGorjetaProf = data.gorjetaProfissional === barbeiroId;
+                const temProfId = data.profissionalId === barbeiroId;
+                
+                const ehParaBarbeiro = temBarbeiroId || temGorjetaProf || temProfId;
+                
+                if (ehParaBarbeiro) {
+                    if (!idsVistos.has(doc.id)) {
+                        idsVistos.add(doc.id);
+                        todasGorjetas.push({
+                            id: doc.id,
+                            fonte: 'comanda',
+                            valor: valor,
+                            dataAtualizacao: data.atualizadoEm || data.dataFinalizacao || data.dataCriacao,
+                            clienteNome: data.clienteNome || 'Cliente'
+                        });
+                    }
+                }
+            }
+        });
+        
+        // ===== FONTE 2: Pagamentos =====
+        try {
+            const pagamentosRef = collection(db, "pagamentos");
+            const pagamentosSnapshot = await getDocs(pagamentosRef);
+            
+            pagamentosSnapshot.forEach(doc => {
+                const data = doc.data();
+                let valor = data.gorjeta || 0;
+                
+                if (typeof valor === 'string') {
+                    valor = parseFloat(valor.replace(',', '.')) || 0;
+                }
+                valor = Number(valor) || 0;
+                
+                if (valor > 0) {
+                    const temProfId = data.profissionalId === barbeiroId;
+                    const temGorjetaProf = data.gorjetaProfissional === barbeiroId;
+                    const temBarbeiroId = data.barbeiroId === barbeiroId;
+                    
+                    const ehParaBarbeiro = temProfId || temGorjetaProf || temBarbeiroId;
+                    
+                    if (ehParaBarbeiro) {
+                        if (!idsVistos.has(doc.id)) {
+                            idsVistos.add(doc.id);
+                            todasGorjetas.push({
+                                id: doc.id,
+                                fonte: 'pagamento',
+                                valor: valor,
+                                dataAtualizacao: data.atualizadoEm || data.createdAt || data.data,
+                                clienteNome: data.clienteNome || 'Cliente'
+                            });
+                        }
+                    }
+                }
+            });
+        } catch (e) {
+            console.warn("⚠️ Erro ao buscar pagamentos:", e);
+        }
+        
+    } catch (error) {
+        console.error("❌ Erro na busca de gorjetas:", error);
+    }
+    
+    // Ordenar por data (mais recentes primeiro)
+    todasGorjetas.sort((a, b) => {
+        const dateA = a.dataAtualizacao?.toDate ? a.dataAtualizacao.toDate() : new Date(0);
+        const dateB = b.dataAtualizacao?.toDate ? b.dataAtualizacao.toDate() : new Date(0);
+        return dateB - dateA;
+    });
+    
+    const total = todasGorjetas.reduce((sum, g) => sum + g.valor, 0);
+    const quantidade = todasGorjetas.length;
+    const ultimas = todasGorjetas.slice(0, 10);
+    
+    cacheGorjetas = {
+        total: total,
+        quantidade: quantidade,
+        ultimas: ultimas
+    };
+    
+    console.log(`💰 ${quantidade} gorjetas encontradas, total: ${formatarMoeda(total)}`);
+    
+    return {
+        total: total,
+        quantidade: quantidade,
+        ultimasGorjetas: ultimas
+    };
+}
+
+/**
+ * Buscar gorjetas (todas)
+ */
+async function buscarGorjetas() {
+    if (!barbeiroId) return { total: 0, quantidade: 0 };
+    
+    try {
+        if (cacheGorjetas.ultimas.length > 0) {
+            return cacheGorjetas;
+        }
+        const resultado = await buscarTodasGorjetas();
+        return resultado;
+    } catch (error) {
+        console.error("Erro na busca de gorjetas:", error);
+        return { total: 0, quantidade: 0 };
+    }
+}
+
+/**
+ * Listener em tempo real para gorjetas
+ */
+function iniciarListenerGorjetas(callback) {
+    if (!barbeiroId) {
+        console.warn("⚠️ Barbeiro ID não disponível");
+        return;
+    }
+    
+    console.log("🔄 Iniciando listener de gorjetas...");
+    
+    if (unsubscribeGorjetas) {
+        unsubscribeGorjetas();
+        unsubscribeGorjetas = null;
+    }
+    
+    try {
+        const comandasRef = collection(db, "comandas");
+        
+        unsubscribeGorjetas = onSnapshot(comandasRef, async () => {
+            console.log("📊 Mudança detectada em comandas");
+            const resultado = await buscarTodasGorjetas();
+            cacheGorjetas = {
+                total: resultado.total,
+                quantidade: resultado.quantidade,
+                ultimas: resultado.ultimasGorjetas
+            };
+            if (callback) {
+                callback(resultado);
+            }
+        }, (error) => {
+            console.error("❌ Erro no listener:", error);
+        });
+        
+        console.log("✅ Listener de gorjetas iniciado");
+    } catch (error) {
+        console.error("❌ Erro ao iniciar listener:", error);
+    }
+}
+
 // ==================== FUNÇÕES DE COMANDA ====================
 
 async function buscarComandaPorAgendamentoId(agendamentoId) {
@@ -322,7 +509,6 @@ async function buscarComandaPorAgendamentoId(agendamentoId) {
         if (!snapshot.empty) {
             const comandaDoc = snapshot.docs[0];
             const comanda = { id: comandaDoc.id, ...comandaDoc.data() };
-            console.log(`✅ Comanda encontrada para agendamento ${agendamentoId}`);
             return comanda;
         }
         return null;
@@ -341,8 +527,6 @@ async function extrairItensDaComanda(comanda, agendamento) {
     let precoOriginal = 0;
     
     if (comanda) {
-        console.log("📋 Extraindo itens da COMANDA");
-        
         if (comanda.servicos && comanda.servicos.length > 0) {
             comanda.servicos.forEach(s => {
                 const nome = s.nome || "Serviço";
@@ -407,8 +591,6 @@ async function extrairItensDaComanda(comanda, agendamento) {
     }
     
     // Fallback para dados do agendamento
-    console.log("📋 Usando dados do AGENDAMENTO como fallback");
-    
     if (agendamento.pacoteInfo) {
         ehPacote = true;
         nomePacote = agendamento.pacoteInfo.nome || "Pacote";
@@ -512,6 +694,8 @@ async function renderizarDashboard() {
     try {
         const dataAtualStr = getDataAtualString();
         
+        const resultadoGorjetas = await buscarGorjetas();
+        
         const agendamentosRef = collection(db, "agendamentos");
         const q = query(agendamentosRef, where("profissionalId", "==", barbeiroId));
         const snapshot = await getDocs(q);
@@ -607,6 +791,33 @@ async function renderizarDashboard() {
                     padding: 2px 8px;
                     border-radius: 20px;
                 }
+                .gorjeta-card {
+                    background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(245, 158, 11, 0.02));
+                    border: 1px solid rgba(245, 158, 11, 0.2);
+                }
+                .gorjeta-card .stat-icon {
+                    background: rgba(245, 158, 11, 0.2);
+                    color: #f59e0b;
+                }
+                .gorjeta-total {
+                    font-size: 1.8rem;
+                    font-weight: 800;
+                    color: #f59e0b;
+                }
+                .gorjeta-detalhe {
+                    display: flex;
+                    justify-content: space-between;
+                    padding: 8px 12px;
+                    background: rgba(0,0,0,0.2);
+                    border-radius: 8px;
+                    margin-top: 8px;
+                    font-size: 0.75rem;
+                    color: #9ca3af;
+                }
+                .gorjeta-detalhe .valor {
+                    color: #f59e0b;
+                    font-weight: 600;
+                }
             </style>
             <div class="stats-grid">
                 <div class="stat-card">
@@ -639,6 +850,19 @@ async function renderizarDashboard() {
                 </div>
             </div>
             
+            <div class="stats-grid" style="margin-top: -10px; margin-bottom: 20px;">
+                <div class="stat-card gorjeta-card">
+                    <div class="stat-icon"><i class="fa-solid fa-hand-holding-heart"></i></div>
+                    <div class="stat-info">
+                        <span class="stat-value" id="gorjetaTotalValor" style="color: #f59e0b;">${formatarMoeda(resultadoGorjetas.total)}</span>
+                        <span class="stat-label">💰 Total em Gorjetas</span>
+                        <div class="gorjeta-detalhe">
+                            <span><i class="fa-regular fa-calendar"></i> ${resultadoGorjetas.quantidade} gorjetas</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
             <div class="agenda-header">
                 <h3><i class="fa-solid fa-calendar-week"></i> Próximos Atendimentos</h3>
             </div>
@@ -649,6 +873,15 @@ async function renderizarDashboard() {
         `;
         
         conteudoDiv.innerHTML = html;
+        
+        iniciarListenerGorjetas((dados) => {
+            console.log(`🔄 Atualização - Gorjetas: ${dados.quantidade} registros, total: ${formatarMoeda(dados.total)}`);
+            
+            const gorjetaTotalElement = document.getElementById('gorjetaTotalValor');
+            if (gorjetaTotalElement) {
+                gorjetaTotalElement.textContent = formatarMoeda(dados.total);
+            }
+        });
         
     } catch (error) {
         console.error("Erro ao carregar dashboard:", error);
@@ -827,6 +1060,8 @@ async function renderizarComissoes() {
     conteudoDiv.innerHTML = '<div class="loading"><i class="fa-solid fa-spinner fa-spin"></i> Carregando comissões...</div>';
     
     try {
+        const resultadoGorjetas = await buscarGorjetas();
+        
         const agendamentosRef = collection(db, "agendamentos");
         const q = query(
             agendamentosRef,
@@ -891,6 +1126,13 @@ async function renderizarComissoes() {
                         <span class="stat-label">Atendimentos Realizados</span>
                     </div>
                 </div>
+                <div class="stat-card gorjeta-card" style="background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(245, 158, 11, 0.02)); border-color: rgba(245, 158, 11, 0.2);">
+                    <div class="stat-icon" style="background: rgba(245, 158, 11, 0.2); color: #f59e0b;"><i class="fa-solid fa-hand-holding-heart"></i></div>
+                    <div class="stat-info">
+                        <span class="stat-value" style="color: #f59e0b;">${formatarMoeda(resultadoGorjetas.total)}</span>
+                        <span class="stat-label">💰 Gorjetas Recebidas (${resultadoGorjetas.quantidade} gorjetas)</span>
+                    </div>
+                </div>
             </div>
             <div class="agenda-header">
                 <h3><i class="fa-solid fa-list"></i> Histórico de Atendimentos</h3>
@@ -923,6 +1165,60 @@ async function renderizarMetas() {
         const inicioStr = `${inicioMes.getFullYear()}-${String(inicioMes.getMonth() + 1).padStart(2, '0')}-${String(inicioMes.getDate()).padStart(2, '0')}`;
         const fimStr = `${fimMes.getFullYear()}-${String(fimMes.getMonth() + 1).padStart(2, '0')}-${String(fimMes.getDate()).padStart(2, '0')}`;
         
+        // Buscar gorjetas
+        let totalGorjetas = 0;
+        let idsVistos = new Set();
+        
+        try {
+            const comandasRef = collection(db, "comandas");
+            
+            // FONTE 1: barbeiroId
+            const q1 = query(comandasRef, where("barbeiroId", "==", barbeiroId));
+            const snapshot1 = await getDocs(q1);
+            
+            snapshot1.forEach(doc => {
+                if (idsVistos.has(doc.id)) return;
+                idsVistos.add(doc.id);
+                
+                const data = doc.data();
+                let valor = data.gorjeta || 0;
+                if (typeof valor === 'string') {
+                    valor = parseFloat(valor.replace(',', '.')) || 0;
+                }
+                valor = Number(valor) || 0;
+                
+                const status = data.status || '';
+                if ((status === 'finalizada' || status === 'concluido' || status === 'finalizado') && valor > 0) {
+                    totalGorjetas += valor;
+                }
+            });
+            
+            // FONTE 2: gorjetaProfissional
+            const q2 = query(comandasRef, where("gorjetaProfissional", "==", barbeiroId));
+            const snapshot2 = await getDocs(q2);
+            
+            snapshot2.forEach(doc => {
+                if (idsVistos.has(doc.id)) return;
+                idsVistos.add(doc.id);
+                
+                const data = doc.data();
+                let valor = data.gorjeta || 0;
+                if (typeof valor === 'string') {
+                    valor = parseFloat(valor.replace(',', '.')) || 0;
+                }
+                valor = Number(valor) || 0;
+                
+                const status = data.status || '';
+                if ((status === 'finalizada' || status === 'concluido' || status === 'finalizado') && valor > 0) {
+                    totalGorjetas += valor;
+                }
+            });
+            
+        } catch (error) {
+            console.error("Erro ao buscar gorjetas:", error);
+        }
+        
+        // Buscar atendimentos concluídos
         const agendamentosRef = collection(db, "agendamentos");
         const q = query(
             agendamentosRef,
@@ -944,81 +1240,77 @@ async function renderizarMetas() {
             if (dataAg && dataAg >= inicioStr && dataAg <= fimStr) {
                 const comanda = await buscarComandaPorAgendamentoId(agId);
                 const itensInfo = await extrairItensDaComanda(comanda, ag);
-                const valor = itensInfo.valorTotal;
-                realizado += valor;
-                comissaoTotal += (valor * comissaoPercentual) / 100;
+                
+                const valorServico = itensInfo.valorTotal;
+                realizado += valorServico;
+                comissaoTotal += (valorServico * comissaoPercentual) / 100;
                 atendimentosMes++;
             }
         }
         
+        const totalRealizado = realizado;
         const metaValor = barbeiroData?.metaMensal || 5000;
-        const percentual = metaValor > 0 ? (realizado / metaValor) * 100 : 0;
+        const percentual = metaValor > 0 ? (totalRealizado / metaValor) * 100 : 0;
         const diasRestantes = Math.ceil((fimMes - hoje) / (1000 * 60 * 60 * 24));
-        const mediaNecessaria = diasRestantes > 0 ? (metaValor - realizado) / diasRestantes : 0;
+        const mediaNecessaria = diasRestantes > 0 ? (metaValor - totalRealizado) / diasRestantes : 0;
         
         const html = `
-            <div class="stats-grid">
-                <div class="stat-card">
-                    <div class="stat-icon"><i class="fa-solid fa-bullseye"></i></div>
-                    <div class="stat-info">
-                        <span class="stat-value">${formatarMoeda(metaValor)}</span>
-                        <span class="stat-label">Meta do Mês</span>
-                    </div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon"><i class="fa-solid fa-chart-line"></i></div>
-                    <div class="stat-info">
-                        <span class="stat-value">${formatarMoeda(realizado)}</span>
-                        <span class="stat-label">Realizado</span>
-                    </div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon"><i class="fa-solid fa-percent"></i></div>
-                    <div class="stat-info">
-                        <span class="stat-value">${percentual.toFixed(1)}%</span>
-                        <span class="stat-label">Atingido</span>
-                    </div>
-                </div>
-            </div>
-            <div class="stats-grid" style="margin-top: 0;">
-                <div class="stat-card">
-                    <div class="stat-icon"><i class="fa-solid fa-calendar"></i></div>
-                    <div class="stat-info">
-                        <span class="stat-value">${atendimentosMes}</span>
-                        <span class="stat-label">Atendimentos no Mês</span>
-                    </div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon"><i class="fa-solid fa-coins"></i></div>
-                    <div class="stat-info">
-                        <span class="stat-value">${formatarMoeda(comissaoTotal)}</span>
-                        <span class="stat-label">Comissão (${comissaoPercentual}%)</span>
-                    </div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon"><i class="fa-solid fa-ticket"></i></div>
-                    <div class="stat-info">
-                        <span class="stat-value">${atendimentosMes > 0 ? formatarMoeda(realizado / atendimentosMes) : formatarMoeda(0)}</span>
-                        <span class="stat-label">Ticket Médio</span>
-                    </div>
-                </div>
-            </div>
-            <div class="progresso-meta">
-                <div class="progress-bar">
-                    <div class="progress-fill" style="width: ${Math.min(percentual, 100)}%"></div>
-                </div>
-                <p style="text-align: center; margin-top: 12px; color: #9ca3af;">
-                    ${percentual >= 100 ? '🎉 Parabéns! Meta atingida!' : `Faltam ${formatarMoeda(Math.max(0, metaValor - realizado))} para atingir sua meta`}
-                </p>
-                ${percentual < 100 && diasRestantes > 0 ? `
-                    <div style="margin-top: 16px; padding: 12px; background: rgba(33,153,239,0.1); border-radius: 12px;">
-                        <p style="font-size: 0.8rem; color: #2199EF; text-align: center;">
-                            <i class="fa-solid fa-chart-simple"></i> Faltam ${diasRestantes} dia(s). Para bater a meta, você precisa de uma média de ${formatarMoeda(mediaNecessaria)} por dia
-                        </p>
-                    </div>
-                ` : ''}
-            </div>
             <style>
+                .stats-grid {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                    gap: 16px;
+                    margin-bottom: 20px;
+                }
+                .stat-card {
+                    background: #151823;
+                    border-radius: 16px;
+                    padding: 16px 20px;
+                    border: 1px solid #2a2d3a;
+                    transition: all 0.3s ease;
+                }
+                .stat-card:hover {
+                    transform: translateY(-2px);
+                    border-color: #2199EF;
+                }
+                .stat-value {
+                    display: block;
+                    font-size: 1.4rem;
+                    font-weight: 800;
+                    color: #fff;
+                    line-height: 1.2;
+                }
+                .stat-label {
+                    font-size: 0.65rem;
+                    color: #9ca3af;
+                    text-transform: uppercase;
+                    letter-spacing: 0.5px;
+                    font-weight: 500;
+                }
+                .stat-label i {
+                    margin-right: 4px;
+                }
+                .stat-icon {
+                    width: 40px;
+                    height: 40px;
+                    border-radius: 12px;
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 1.1rem;
+                    margin-bottom: 8px;
+                }
+                .stat-icon.blue { background: rgba(33, 153, 239, 0.15); color: #2199EF; }
+                .stat-icon.green { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+                .stat-icon.gold { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
+                .stat-icon.purple { background: rgba(33, 153, 239, 0.15); color: #2199EF; }
+                .stat-icon.gray { background: rgba(148, 163, 184, 0.1); color: #94a3b8; }
+                .small-text {
+                    font-size: 0.65rem;
+                    color: #64748b;
+                    display: block;
+                    margin-top: 2px;
+                }
                 .progresso-meta {
                     background: #151823;
                     border-radius: 16px;
@@ -1037,7 +1329,130 @@ async function renderizarMetas() {
                     border-radius: 10px;
                     transition: width 0.5s ease;
                 }
+                .progresso-meta p {
+                    text-align: center;
+                    margin-top: 12px;
+                    color: #9ca3af;
+                    font-size: 0.85rem;
+                }
+                .info-box {
+                    margin-top: 12px;
+                    padding: 12px;
+                    border-radius: 12px;
+                    text-align: center;
+                    font-size: 0.8rem;
+                }
+                .info-box.blue {
+                    background: rgba(33, 153, 239, 0.1);
+                    border: 1px solid rgba(33, 153, 239, 0.2);
+                    color: #2199EF;
+                }
+                .info-box.gold {
+                    background: rgba(245, 158, 11, 0.1);
+                    border: 1px solid rgba(245, 158, 11, 0.2);
+                    color: #f59e0b;
+                }
+                .info-box strong { font-weight: 700; }
+                .card-informativo {
+                    border-color: rgba(148, 163, 184, 0.2);
+                    background: rgba(148, 163, 184, 0.03);
+                }
+                .card-informativo .stat-value {
+                    color: #94a3b8;
+                    font-size: 1.2rem;
+                    font-weight: 600;
+                }
+                .card-informativo .stat-label {
+                    color: #64748b;
+                }
+                .card-informativo .small-text {
+                    color: #64748b;
+                }
             </style>
+            
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-icon blue"><i class="fa-solid fa-bullseye"></i></div>
+                    <div class="stat-info">
+                        <span class="stat-value">${formatarMoeda(metaValor)}</span>
+                        <span class="stat-label"><i class="fa-regular fa-flag"></i> Meta do Mês</span>
+                    </div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="stat-icon green"><i class="fa-solid fa-chart-line"></i></div>
+                    <div class="stat-info">
+                        <span class="stat-value" style="color: #10b981;">${formatarMoeda(totalRealizado)}</span>
+                        <span class="stat-label"><i class="fa-solid fa-cut"></i> Realizado (apenas serviços + Produtos)</span>
+                        <span class="small-text">✅ Usado para calcular a meta</span>
+                    </div>
+                </div>
+                
+                <div class="stat-card" style="border-color: rgba(245, 158, 11, 0.3);">
+                    <div class="stat-icon gold"><i class="fa-solid fa-hand-holding-heart"></i></div>
+                    <div class="stat-info">
+                        <span class="stat-value" style="color: #f59e0b;">${formatarMoeda(totalGorjetas)}</span>
+                        <span class="stat-label"><i class="fa-solid fa-coins"></i> Gorjetas Recebidas</span>
+                        <span class="small-text">💰 Total de todas as gorjetas</span>
+                    </div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="stat-icon purple"><i class="fa-solid fa-percent"></i></div>
+                    <div class="stat-info">
+                        <span class="stat-value">${percentual.toFixed(1)}%</span>
+                        <span class="stat-label"><i class="fa-regular fa-circle-check"></i> Meta Atingida</span>
+                        <span class="small-text">${formatarMoeda(Math.max(0, metaValor - totalRealizado))} para atingir</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-icon blue"><i class="fa-solid fa-calendar"></i></div>
+                    <div class="stat-info">
+                        <span class="stat-value">${atendimentosMes}</span>
+                        <span class="stat-label"><i class="fa-regular fa-calendar"></i> Atendimentos no Mês</span>
+                    </div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="stat-icon purple"><i class="fa-solid fa-coins"></i></div>
+                    <div class="stat-info">
+                        <span class="stat-value">${formatarMoeda(comissaoTotal)}</span>
+                        <span class="stat-label"><i class="fa-solid fa-percent"></i> Comissão (${comissaoPercentual}%)</span>
+                        <span class="small-text">📊 Calculada sobre serviços</span>
+                    </div>
+                </div>
+                
+                <div class="stat-card card-informativo">
+                    <div class="stat-icon gray"><i class="fa-solid fa-info-circle"></i></div>
+                    <div class="stat-info">
+                        <span class="stat-value">${formatarMoeda(totalRealizado + totalGorjetas)}</span>
+                        <span class="stat-label">📊 Valor Bruto Total</span>
+                        <span class="small-text">ℹ️ Serviços + Produtos + Gorjetas | Apenas referência</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="progresso-meta">
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: ${Math.min(percentual, 100)}%"></div>
+                </div>
+                <p>
+                    ${percentual >= 100 ? '🎉 Parabéns! Meta atingida!' : `Faltam ${formatarMoeda(Math.max(0, metaValor - totalRealizado))} para atingir sua meta`}
+                </p>
+                ${percentual < 100 && diasRestantes > 0 ? `
+                    <div class="info-box blue">
+                        <i class="fa-solid fa-chart-simple"></i> Faltam ${diasRestantes} dia(s). Média necessária: <strong>${formatarMoeda(mediaNecessaria)}</strong> por dia
+                    </div>
+                ` : ''}
+                ${totalGorjetas > 0 ? `
+                    <div class="info-box gold">
+                        <i class="fa-solid fa-hand-holding-heart"></i> Você recebeu <strong>${formatarMoeda(totalGorjetas)}</strong> em gorjetas
+                    </div>
+                ` : ''}
+            </div>
         `;
         
         conteudoDiv.innerHTML = html;
@@ -1205,6 +1620,13 @@ function carregarPagina(pagina) {
         }
     });
     
+    if (pagina !== 'dashboard' && pagina !== 'comissoes' && pagina !== 'metas') {
+        if (unsubscribeGorjetas) {
+            unsubscribeGorjetas();
+            unsubscribeGorjetas = null;
+        }
+    }
+    
     switch(pagina) {
         case 'dashboard':
             renderizarDashboard();
@@ -1324,6 +1746,7 @@ function atualizarDataHora() {
 
 document.addEventListener('DOMContentLoaded', () => {
     console.log("🚀 DOM completamente carregado, inicializando aplicação...");
+    console.log("📌 Versão: Sistema de gorjetas integrado");
     
     inicializarElementos();
     
@@ -1331,7 +1754,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
     }
     
-    // Aguarda autenticação do Firebase antes de carregar os dados
     onAuthStateChanged(auth, (user) => {
         if (user) {
             console.log("✅ Usuário autenticado no Firebase:", user.uid);
@@ -1383,4 +1805,4 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
-console.log("✅ painel-barbeiro.js carregado (versão completa com autenticação integrada)");
+console.log("✅ painel-barbeiro.js carregado (versão limpa)");
