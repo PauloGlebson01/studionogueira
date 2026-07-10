@@ -218,7 +218,7 @@ _Esta é uma mensagem automática. Por favor, não responda._`;
 
 Olá, *${nomeCliente}*! ✂️💈
 
-Seu agendamento é HOJE! Não se esqueça:
+ Passando para confirmar seu agendamento para hoje:
 
 📅 *Data:* ${data}
 ⏰ *Horário:* ${horario}
@@ -229,11 +229,7 @@ ${servicosTexto}
 
 💰 *Valor total:* ${formatarMoeda(valorTotal)}
 
-📍 *Endereço:* Rua Administrador Manoel Ângelo de Oliveira, 295, João Pessoa - PB
-
-*Studio Nogueira* - Mais de 10 anos transformando estilos! ✂️💈
-
-_Esta é uma mensagem automática. Por favor, não responda._`;
+está confirmado?`;
     }
 }
 
