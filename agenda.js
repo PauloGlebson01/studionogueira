@@ -4,6 +4,7 @@
 // VERSÃO: Layout Horizontal em Tabela com Dia da Semana Corrigido
 // CORREÇÃO v2: Removidos botões "Ausente" e "Cancelar" - gestão feita apenas na comanda
 // NOVIDADE: Lista de Espera integrada com notificação automática - SEM ÍNDICES COMPOSTOS
+// CORREÇÃO v3: Sincronização de comandas apenas quando finalizadas
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
@@ -681,10 +682,19 @@ function extrairItensDoAgendamento(agendamento) {
     return { itens, valorTotal };
 }
 
-// ==================== SINCRONIZAR COMANDA COM AGENDAMENTO ====================
+// ==================== SINCRONIZAR COMANDA COM AGENDAMENTO (CORRIGIDA) ====================
 
 async function sincronizarComandaComAgendamento(comandaId, comandaData) {
-    if (!comandaData.agendamentoId) return;
+    // ✅ SÓ SINCRONIZA SE A COMANDA FOI FINALIZADA
+    if (comandaData.status !== "finalizada" && comandaData.status !== "concluido") {
+        console.log(`⏭️ Comanda ${comandaId} não finalizada (status: ${comandaData.status}), pulando sincronização`);
+        return false;
+    }
+    
+    if (!comandaData.agendamentoId) {
+        console.log(`⏭️ Comanda ${comandaId} sem agendamentoId, pulando`);
+        return false;
+    }
 
     try {
         const agendamentoRef = doc(db, "agendamentos", comandaData.agendamentoId);
@@ -693,19 +703,29 @@ async function sincronizarComandaComAgendamento(comandaId, comandaData) {
         if (agendamentoDoc.exists()) {
             const agendamentoAtual = agendamentoDoc.data();
 
-            const precisaAtualizar = JSON.stringify(agendamentoAtual.servicos) !== JSON.stringify(comandaData.servicos) ||
-                JSON.stringify(agendamentoAtual.pacotes) !== JSON.stringify(comandaData.pacotes) ||
-                agendamentoAtual.total !== comandaData.total;
+            // Só atualiza se o agendamento NÃO estiver concluído
+            if (agendamentoAtual.status === "concluido") {
+                console.log(`⏭️ Agendamento ${comandaData.agendamentoId} já está concluído, pulando`);
+                return false;
+            }
+
+            const precisaAtualizar = 
+                JSON.stringify(agendamentoAtual.servicos || []) !== JSON.stringify(comandaData.servicos || []) ||
+                JSON.stringify(agendamentoAtual.pacotes || []) !== JSON.stringify(comandaData.pacotes || []) ||
+                agendamentoAtual.valor !== comandaData.total;
 
             if (precisaAtualizar) {
                 await updateDoc(agendamentoRef, {
+                    status: "concluido",
+                    dataConclusao: Timestamp.now(),
                     servicos: comandaData.servicos || [],
                     pacotes: comandaData.pacotes || [],
+                    produtos: comandaData.produtos || [],
                     valor: comandaData.total,
                     total: comandaData.total,
                     atualizadoEm: Timestamp.now()
                 });
-                console.log(`✅ Agendamento ${comandaData.agendamentoId} atualizado via comanda`);
+                console.log(`✅ Agendamento ${comandaData.agendamentoId} concluído via comanda ${comandaId}`);
                 return true;
             }
         }
@@ -716,26 +736,31 @@ async function sincronizarComandaComAgendamento(comandaId, comandaData) {
     }
 }
 
-// ==================== LISTENER DE COMANDAS ====================
+// ==================== LISTENER DE COMANDAS (CORRIGIDO) ====================
 
 function iniciarListenerComandas() {
     if (unsubscribeComandas) unsubscribeComandas();
 
     unsubscribeComandas = onSnapshot(collection(db, "comandas"), async (snapshot) => {
-        let precisaAtualizar = false;
-
         for (const change of snapshot.docChanges()) {
             const comandaData = { id: change.doc.id, ...change.doc.data() };
 
-            if (change.type === "modified") {
+            // ✅ VERIFICA SE JÁ FOI SINCRONIZADO
+            if (change.type === "modified" && 
+                (comandaData.status === "finalizada" || comandaData.status === "concluido") && 
+                !comandaData.sincronizadoComAgenda) {
+                
+                console.log(`🔄 Comanda ${change.doc.id} finalizada, sincronizando com agenda...`);
                 const atualizado = await sincronizarComandaComAgendamento(change.doc.id, comandaData);
-                if (atualizado) precisaAtualizar = true;
+                
+                if (atualizado) {
+                    await updateDoc(doc(db, "comandas", change.doc.id), {
+                        sincronizadoComAgenda: true,
+                        dataSincronizacao: Timestamp.now()
+                    });
+                    console.log(`✅ Comanda ${change.doc.id} marcada como sincronizada`);
+                }
             }
-        }
-
-        if (precisaAtualizar && typeof aplicarFiltro === 'function') {
-            console.log("🔄 Atualizando agenda devido a mudanças na comanda...");
-            aplicarFiltro();
         }
     }, (error) => {
         console.error("Erro no listener de comandas:", error);
@@ -871,7 +896,8 @@ async function criarComandaDoAgendamento(agendamento) {
             horarioAgendamento: agendamento.horario,
             dataCriacao: Timestamp.now(),
             updatedAt: Timestamp.now(),
-            origem: "agendamento"
+            origem: "agendamento",
+            sincronizadoComAgenda: false
         };
 
         const comandaRef = await addDoc(collection(db, "comandas"), comandaData);
@@ -1041,9 +1067,11 @@ async function concluirAgendamento(id, agendamento) {
             await updateDoc(doc(db, "comandas", comandaId), {
                 status: "finalizada",
                 dataFinalizacao: Timestamp.now(),
-                updatedAt: Timestamp.now()
+                updatedAt: Timestamp.now(),
+                sincronizadoComAgenda: true,
+                dataSincronizacao: Timestamp.now()
             });
-            console.log(`✅ Comanda ${comandaId} atualizada para status "finalizada"`);
+            console.log(`✅ Comanda ${comandaId} atualizada para status "finalizada" e marcada como sincronizada`);
         } else {
             console.log("⚠️ Nenhuma comanda encontrada para este agendamento");
         }
@@ -1864,6 +1892,7 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log("📅 Agenda.js iniciado - Versão com LEMBRETES WHATSAPP, LAYOUT HORIZONTAL E DIA DA SEMANA CORRIGIDO");
     console.log("ℹ️ Botões 'Ausente' e 'Cancelar' removidos - gestão apenas na comanda");
     console.log("⏳ LISTA DE ESPERA integrada - SEM ÍNDICES COMPOSTOS!");
+    console.log("🔒 CORREÇÃO v3: Sincronização de comandas apenas quando finalizadas");
     
     if (dataInicio) dataInicio.value = '';
     if (dataFim) dataFim.value = '';
@@ -1911,3 +1940,4 @@ if (logoutBtn) logoutBtn.onclick = async () => { await signOut(auth); window.loc
 
 console.log("✅ Agenda.js carregado - Layout horizontal em tabela com dia da semana corrigido!");
 console.log("✅ Lista de Espera integrada com notificação automática - SEM ÍNDICES COMPOSTOS!");
+console.log("✅ CORREÇÃO: Comandas só sincronizam com agenda quando finalizadas!");
