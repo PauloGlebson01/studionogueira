@@ -2,6 +2,7 @@
 // E SINCRONIZAÇÃO AUTOMÁTICA COM AGENDA + FUNÇÕES DE DIAGNÓSTICO
 // E VISUALIZAÇÃO DE GORJETA DOCUMENTAL + IMPRESSÃO DE DOCUMENTO NÃO FISCAL
 // CORREÇÃO v3: Sincronização de comandas apenas quando finalizadas
+// CORREÇÃO v4: Função liberarHorarioAgenda adicionada para liberar horários na agenda
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { 
@@ -236,6 +237,127 @@ function dispararAtualizacaoAgenda() {
         }, 2000);
     } catch(e) {}
 }
+
+// ==================== FUNÇÃO PARA LIBERAR HORÁRIO NA AGENDA ====================
+
+async function liberarHorarioAgenda(comandaId, comandaData, motivo = "Liberado via comanda") {
+    try {
+        console.log("🔓 Iniciando liberação de horário para comanda:", comandaId);
+        
+        // Verifica se a comanda tem um agendamento vinculado
+        if (!comandaData.agendamentoId) {
+            console.log("📝 Comanda sem agendamento vinculado, pulando liberação");
+            return false;
+        }
+        
+        const agendamentoRef = doc(db, "agendamentos", comandaData.agendamentoId);
+        const agendamentoDoc = await getDoc(agendamentoRef);
+        
+        if (!agendamentoDoc.exists()) {
+            console.log("⚠️ Agendamento não encontrado:", comandaData.agendamentoId);
+            return false;
+        }
+        
+        const agendamentoAtual = agendamentoDoc.data();
+        
+        // Verifica se o agendamento já foi concluído
+        if (agendamentoAtual.status === "concluido") {
+            console.log(`⏭️ Agendamento ${comandaData.agendamentoId} já está concluído, não pode ser liberado`);
+            return false;
+        }
+        
+        // Verifica se o horário já foi liberado
+        if (agendamentoAtual.horarioLiberado === true) {
+            console.log(`⏭️ Agendamento ${comandaData.agendamentoId} já está com horário liberado`);
+            return true;
+        }
+        
+        // Atualiza o agendamento - marca como disponível na agenda
+        const updateData = {
+            horarioLiberado: true,
+            dataLiberacao: Timestamp.now(),
+            liberadoPor: "comanda",
+            liberadoPorId: comandaId,
+            status: "horario_liberado",
+            motivoCancelamento: motivo || "Horário liberado via comanda",
+            atualizadoEm: Timestamp.now()
+        };
+        
+        // Se o agendamento estava como cancelado ou ausente, mantém o histórico
+        if (agendamentoAtual.status === "cancelado" || agendamentoAtual.status === "ausente") {
+            updateData.statusAnterior = agendamentoAtual.status;
+            updateData.horarioLiberado = true;
+        }
+        
+        await updateDoc(agendamentoRef, updateData);
+        console.log(`✅ Horário do agendamento ${comandaData.agendamentoId} liberado com sucesso!`);
+        
+        // Registrar no histórico de liberações
+        try {
+            await addDoc(collection(db, "historico_liberacoes"), {
+                agendamentoId: comandaData.agendamentoId,
+                comandaId: comandaId,
+                data: comandaData.data || comandaData.dataCriacao,
+                horario: agendamentoAtual.horario || "N/A",
+                profissionalId: comandaData.barbeiroId || agendamentoAtual.profissionalId,
+                profissionalNome: comandaData.barbeiroNome || agendamentoAtual.profissional,
+                clienteId: comandaData.clienteId,
+                clienteNome: comandaData.clienteNome || agendamentoAtual.nome,
+                motivo: motivo,
+                statusAnterior: agendamentoAtual.status || "N/A",
+                dataLiberacao: Timestamp.now(),
+                liberadoPor: "comanda",
+                liberadoPorId: comandaId
+            });
+            console.log("📝 Histórico de liberação registrado");
+        } catch (logError) {
+            console.warn("⚠️ Não foi possível registrar histórico de liberação:", logError);
+        }
+        
+        // Dispara eventos para atualizar a agenda em tempo real
+        dispararAtualizacaoAgenda();
+        
+        // Dispara evento específico de horário liberado
+        const event = new CustomEvent('horarioLiberado', {
+            detail: {
+                agendamentoId: comandaData.agendamentoId,
+                comandaId: comandaId,
+                data: agendamentoAtual.data,
+                horario: agendamentoAtual.horario,
+                profissionalId: comandaData.barbeiroId || agendamentoAtual.profissionalId,
+                profissionalNome: comandaData.barbeiroNome || agendamentoAtual.profissional,
+                timestamp: Date.now(),
+                source: 'comanda.js'
+            }
+        });
+        window.dispatchEvent(event);
+        
+        // Salva no localStorage para sincronização entre abas
+        try {
+            localStorage.setItem('horarioLiberado', JSON.stringify({
+                agendamentoId: comandaData.agendamentoId,
+                data: agendamentoAtual.data,
+                horario: agendamentoAtual.horario,
+                profissionalId: comandaData.barbeiroId || agendamentoAtual.profissionalId,
+                timestamp: Date.now()
+            }));
+            setTimeout(() => {
+                localStorage.removeItem('horarioLiberado');
+            }, 2000);
+        } catch (e) {
+            console.warn("⚠️ Erro ao salvar no localStorage:", e);
+        }
+        
+        return true;
+        
+    } catch (error) {
+        console.error("❌ Erro ao liberar horário na agenda:", error);
+        return false;
+    }
+}
+
+// Exportar a função para uso global
+window.liberarHorarioAgenda = liberarHorarioAgenda;
 
 // ==================== FUNÇÃO PARA SINCRONIZAR AGENDAMENTO COM COMANDA (CORRIGIDA) ====================
 
@@ -1060,7 +1182,6 @@ function renderizarComandaEspecifica(comanda) {
     const metodoIcon = getMetodoIcon(comanda.formaPagamento);
     const parcelasTexto = comanda.parcelas && comanda.parcelas > 1 ? ` (${comanda.parcelas}x)` : '';
     
-    // ⭐ GORJETA NA VISUALIZAÇÃO ESPECÍFICA
     const gorjetaHtml = (comanda.gorjeta || 0) > 0 ? `
         <div style="display: flex; justify-content: space-between; margin: 10px 0; padding: 8px 12px; background: rgba(245, 158, 11, 0.08); border-radius: 8px; border: 1px solid rgba(245, 158, 11, 0.2);">
             <span style="color: #f59e0b; font-size: 0.75rem; display: flex; align-items: center; gap: 6px;">
@@ -1250,20 +1371,17 @@ function aplicarFiltros() {
     let filtradas = [...comandas];
     console.log(`   Total inicial: ${filtradas.length} comandas`);
     
-    // Filtro por status
     if (currentFilter && currentFilter !== "todas") {
         filtradas = filtradas.filter(c => c.status === currentFilter);
         console.log(`   Após filtro status (${currentFilter}): ${filtradas.length}`);
     }
     
-    // Filtro por período
     if (currentPeriodo && currentPeriodo !== "todas") {
         const antes = filtradas.length;
         filtradas = filtradas.filter(c => filtrarPorPeriodo(c));
         console.log(`   Após filtro período (${currentPeriodo}): ${filtradas.length} (antes: ${antes})`);
     }
     
-    // Filtro por barbeiro
     if (currentBarbeiroFilter) {
         filtradas = filtradas.filter(c => {
             if (c.barbeiroId === currentBarbeiroFilter) return true;
@@ -1275,7 +1393,6 @@ function aplicarFiltros() {
         console.log(`   Após filtro barbeiro: ${filtradas.length}`);
     }
     
-    // Filtro por busca
     if (currentSearch) {
         const search = currentSearch.toLowerCase().trim();
         filtradas = filtradas.filter(c => {
@@ -1324,7 +1441,6 @@ function renderizarComandas(lista) {
         const metodoIcon = getMetodoIcon(c.formaPagamento);
         const parcelasTexto = c.parcelas && c.parcelas > 1 ? ` (${c.parcelas}x)` : '';
         
-        // ⭐ BADGE DE GORJETA NO CARD
         const gorjetaBadge = (c.gorjeta || 0) > 0 ? `
             <span style="background: rgba(245, 158, 11, 0.15); padding: 2px 8px; border-radius: 12px; font-size: 0.55rem; font-weight: 600; color: #f59e0b; display: inline-flex; align-items: center; gap: 4px;">
                 <i class="fa-solid fa-hand-holding-heart"></i> ${formatarMoeda(c.gorjeta)}
@@ -1439,7 +1555,6 @@ async function verDetalhesComanda(id) {
     let servicosHtml = '', produtosHtml = '', pacotesHtml = '';
     const { subtotal, descontoValor, totalFinal } = calcularTotaisComanda(c);
     
-    // ⭐ GORJETA NOS DETALHES
     const gorjetaDetalheHtml = (c.gorjeta || 0) > 0 ? `
         <div style="display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid rgba(245, 158, 11, 0.2);">
             <span style="display: flex; align-items: center; gap: 8px; color: #f59e0b; font-weight: 600; font-size: 0.85rem;">
@@ -1593,7 +1708,7 @@ async function marcarComoAusente() {
         
         if (liberarHorario) {
             console.log("🔓 Liberando horário na agenda (marcando como AUSENTE)...");
-            const liberado = await liberarHorarioAgenda(comandaParaAusencia, comandaData, justificativa || "Cliente não compareceu");
+            const liberado = await window.liberarHorarioAgenda(comandaParaAusencia, comandaData, justificativa || "Cliente não compareceu");
             if (liberado) {
                 mostrarToast("✅ Horário liberado na agenda! Agora está disponível para novos agendamentos.", "sucesso");
             }
@@ -1775,7 +1890,7 @@ async function marcarComoCancelado() {
         
         if (liberarHorario) {
             console.log("🔓 Liberando horário na agenda (marcando como CANCELADO)...");
-            const liberado = await liberarHorarioAgenda(comandaParaCancelamento, comandaData, justificativa || "Cancelado via comanda");
+            const liberado = await window.liberarHorarioAgenda(comandaParaCancelamento, comandaData, justificativa || "Cancelado via comanda");
             if (liberado) {
                 mostrarToast("✅ Horário liberado na agenda! Agora está disponível para novos agendamentos.", "sucesso");
             }
@@ -2079,7 +2194,6 @@ async function salvarComanda(finalizar = false) {
     if (finalizar) {
         const comandaSalva = { ...comandaData, id: comandaRef };
         
-        // ✅ Sincronizar com agenda APENAS se for finalizada
         const sincronizado = await sincronizarAgendamentoComComanda(comandaRef, comandaSalva, "finalizada");
         if (sincronizado) {
             console.log(`✅ Comanda ${comandaRef} sincronizada com agenda`);
@@ -2153,7 +2267,6 @@ async function finalizarComanda(id) {
         
         await sincronizarPagamentoComFinanceiro(id, comandaData);
         
-        // ✅ Sincronizar com agenda APENAS se for finalizada
         await sincronizarAgendamentoComComanda(id, comandaData, "finalizada");
         
         await updateDoc(doc(db, "comandas", id), { 
@@ -2255,7 +2368,6 @@ async function abrirModalEditarComanda(id) {
     const editarObservacoes = document.getElementById("editarObservacoes");
     if (editarObservacoes) editarObservacoes.value = comandaEditando.observacoes || "";
     
-    // ⭐ ATUALIZAR VISUALIZAÇÃO DA GORJETA
     atualizarVisualizacaoGorjeta(comandaEditando);
     
     await renderizarPreLancamentosNaSecao();
@@ -2514,8 +2626,7 @@ async function salvarEdicaoComanda() {
         
         if (novoStatus === "finalizada") {
             updateData.dataFinalizacao = Timestamp.now();
-            // ✅ SÓ SINCRONIZA SE FOR FINALIZADA
-            updateData.sincronizadoComAgenda = false; // Será marcado como true após sincronizar
+            updateData.sincronizadoComAgenda = false;
         } else if (novoStatus === "cancelado") {
             updateData.dataCancelamento = Timestamp.now();
         } else if (novoStatus === "ausente") {
@@ -2529,11 +2640,9 @@ async function salvarEdicaoComanda() {
     
     const comandaAtualizada = { ...comandaEditando, ...updateData };
     
-    // ✅ SÓ DISPARA SINCRONIZAÇÃO SE FOR FINALIZADA
     if (novoStatus !== statusOriginal && novoStatus === "finalizada") {
         console.log(`🔄 Comanda finalizada via edição, sincronizando com agendamento...`);
         
-        // Sincronizar com agendamento
         const sincronizado = await sincronizarAgendamentoComComanda(comandaEditando.id, comandaAtualizada, "finalizada");
         
         if (sincronizado) {
@@ -2544,7 +2653,6 @@ async function salvarEdicaoComanda() {
             console.log(`✅ Comanda ${comandaEditando.id} marcada como sincronizada`);
         }
         
-        // Processar produtos e estoque
         for (const item of (comandaEditando.produtos || [])) {
             if (!item.isPreLancamento && item.produtoId) {
                 try {
@@ -2585,7 +2693,6 @@ async function salvarEdicaoComanda() {
         setTimeout(() => filtrarPorIdComanda(comandaEditando.id), 1000);
     }
     
-    // Disparar atualização da agenda APENAS se for finalizada
     if (novoStatus === "finalizada") {
         dispararAtualizacaoAgenda();
     }
@@ -3667,13 +3774,12 @@ window.sincronizarComandasAntigas = async function() {
 
 window.corrigirNumerosComandas = corrigirNumerosComandasAutomatico;
 window.dispararAtualizacaoAgenda = dispararAtualizacaoAgenda;
-window.liberarHorarioAgenda = liberarHorarioAgenda;
 
-console.log("comanda.js carregado com sucesso! Versão com VISUALIZAÇÃO DE GORJETA E IMPRESSÃO DE DOCUMENTO NÃO FISCAL");
+console.log("comanda.js carregado com sucesso! Versão com VISUALIZAÇÃO DE GORJETA, IMPRESSÃO DE DOCUMENTO NÃO FISCAL e LIBERAÇÃO DE HORÁRIOS NA AGENDA");
 console.log("📋 Funções de diagnóstico disponíveis:");
 console.log("   await diagnosticarHorario('2026-06-15', '08:20')");
 console.log("   await corrigirHorarioLiberado('2026-06-15', '08:20')");
 console.log("   await listarAgendamentosPorData('2026-06-15')");
 console.log("   await corrigirTodosHorariosDia('2026-06-15')");
 console.log("🖨️ Função de impressão: imprimirDocumentoNaoFiscal('comandaId')");
-console.log("✅ CORREÇÃO v3: Sincronização de comandas apenas quando finalizadas!");
+console.log("✅ CORREÇÃO v4: Função liberarHorarioAgenda adicionada para liberar horários na agenda!");
