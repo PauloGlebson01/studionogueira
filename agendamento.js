@@ -1,7 +1,8 @@
-// agendamento.js - Versão CORRIGIDA com VERIFICAÇÃO DE HORÁRIOS LIBERADOS
+// agendamento.js - Versão CORRIGIDA com VERIFICAÇÃO DE OVERLAP DE HORÁRIOS
 // Agendamentos com status CANCELADO ou AUSENTE ou horarioLiberado=true NÃO bloqueiam mais os horários
 // CORREÇÃO: Agendamentos CONFIRMADOS e CONCLUIDOS ocupam horário (pagamento finalizado)
 // NOVIDADE: Lista de Espera integrada com botão e modais
+// CORREÇÃO v2: Verificação de OVERLAP (sobreposição) de horários ao invés de igualdade exata
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { 
@@ -1334,7 +1335,7 @@ function adicionarEventoBotaoListaEspera() {
     }, 100);
 }
 
-// ==================== ATUALIZAR HORÁRIOS (CORRIGIDO) ====================
+// ==================== ATUALIZAR HORÁRIOS (CORRIGIDO - VERIFICA OVERLAP) ====================
 async function atualizarHorarios() {
     const data = dataInput.value;
     const profissionalId = profissionalSelect?.value;
@@ -1418,7 +1419,7 @@ async function atualizarHorarios() {
         
         // ✅ CORREÇÃO: Adicionar "concluido" aos status que ocupam horário
         const statusOcupados = ["confirmado", "concluido"];
-        const horariosOcupados = [];
+        const agendamentosOcupados = [];
         
         console.log(`📊 TOTAL de agendamentos encontrados: ${snapshot.size}`);
         console.log(`📋 Status considerados OCUPADOS: ${statusOcupados.join(', ')}`);
@@ -1430,6 +1431,7 @@ async function atualizarHorarios() {
             const status = agendamento.status;
             const horario = agendamento.horario;
             const horarioLiberado = agendamento.horarioLiberado === true;
+            const duracao = agendamento.duracaoTotal || 60;
             
             if (horarioLiberado) {
                 console.log(`   🟢 HORÁRIO LIBERADO (IGNORADO): ${horario} (status: ${status}, horarioLiberado: true)`);
@@ -1451,26 +1453,27 @@ async function atualizarHorarios() {
             // ✅ CORREÇÃO: confirmado e concluido OCUPAM horário
             if (statusOcupados.includes(status)) {
                 if (horario) {
-                    horariosOcupados.push({
+                    agendamentosOcupados.push({
                         horario: horario,
-                        duracaoTotal: agendamento.duracaoTotal || 60,
+                        duracaoTotal: duracao,
                         status: status,
                         horarioLiberado: horarioLiberado
                     });
-                    console.log(`   🔴 OCUPADO: ${horario} (status: ${status})`);
+                    console.log(`   🔴 OCUPADO: ${horario} (status: ${status}, duração: ${duracao}min)`);
                 }
             } else {
                 console.log(`   🟢 IGNORADO: ${horario} (status: ${status})`);
             }
         });
         
-        console.log(`📊 Horários efetivamente ocupados: ${horariosOcupados.length}`);
+        console.log(`📊 Agendamentos efetivamente ocupados: ${agendamentosOcupados.length}`);
         
         const limiteMinutos = horarioParaMinutos(HORARIO_LIMITE);
         const horariosDisponiveis = [];
         const horariosIndisponiveis = [];
         
         for (const horarioBase of infoAtendimento.horarios) {
+            // ✅ CORREÇÃO: Verifica bloqueio manual por horário exato
             if (horariosBloqueadosManualmente.has(horarioBase)) {
                 console.log(`   🔒 BLOQUEADO (manual): ${horarioBase}`);
                 horariosIndisponiveis.push(horarioBase);
@@ -1485,12 +1488,16 @@ async function atualizarHorarios() {
                 continue;
             }
             
+            // ✅ CORREÇÃO: Verifica OVERLAP com agendamentos ocupados
             let conflito = false;
-            for (const ocupado of horariosOcupados) {
+            for (const ocupado of agendamentosOcupados) {
                 const ocupadoInicio = horarioParaMinutos(ocupado.horario);
                 const ocupadoFim = ocupadoInicio + (ocupado.duracaoTotal || 60);
+                
+                // ✅ VERIFICA SE HÁ OVERLAP (sobreposição)
                 if (inicioMinutos < ocupadoFim && fimMinutos > ocupadoInicio) {
                     conflito = true;
+                    console.log(`   ⚠️ CONFLITO: ${horarioBase} (${inicioMinutos}-${fimMinutos}) sobrepõe ${ocupado.horario} (${ocupadoInicio}-${ocupadoFim})`);
                     break;
                 }
             }
@@ -1745,7 +1752,7 @@ window.addEventListener("click", (e) => {
     if (e.target === modalListaConfirmada) fecharModalListaConfirmada();
 });
 
-// ==================== SUBMIT DO FORMULÁRIO ====================
+// ==================== SUBMIT DO FORMULÁRIO (CORRIGIDO - VERIFICA OVERLAP) ====================
 if (form) {
     form.addEventListener("submit", async (e) => {
         e.preventDefault();
@@ -1767,15 +1774,16 @@ if (form) {
         console.log("  Horário:", horario);
         
         const duracaoTotal = calcularDuracaoTotal();
+        const inicioMinutos = horarioParaMinutos(horario);
+        const fimMinutos = inicioMinutos + duracaoTotal;
         
-        // ==================== VERIFICAÇÃO DE HORÁRIO OCUPADO (CORRIGIDA) ====================
+        // ==================== VERIFICAÇÃO DE CONFLITO CORRIGIDA (OVERLAP) ====================
         if (data && horario && profissionalId) {
             const agendamentosRef = collection(db, "agendamentos");
             
             const q = query(
                 agendamentosRef, 
                 where("data", "==", data), 
-                where("horario", "==", horario),
                 where("profissionalId", "==", profissionalId)
             );
             const existingSnap = await getDocs(q);
@@ -1787,8 +1795,8 @@ if (form) {
                 const agendamento = doc.data();
                 const status = agendamento.status;
                 const horarioLiberado = agendamento.horarioLiberado === true;
-                
-                console.log(`📋 Verificando agendamento: status=${status}, horarioLiberado=${horarioLiberado}`);
+                const horarioExistente = agendamento.horario;
+                const duracaoExistente = agendamento.duracaoTotal || 60;
                 
                 if (horarioLiberado) {
                     console.log(`🟢 Horário ${horario} foi LIBERADO (horarioLiberado=true)`);
@@ -1805,13 +1813,19 @@ if (form) {
                     continue;
                 }
                 
-                // ✅ CORREÇÃO: confirmado e concluido OCUPAM horário
+                // ✅ CORREÇÃO: confirmado e concluido OCUPAM horário - verifica OVERLAP
                 const statusOcupados = ["confirmado", "concluido"];
                 if (statusOcupados.includes(status)) {
-                    horarioOcupado = true;
-                    motivoOcupado = `status: ${status}`;
-                    console.log(`🔴 Horário ${horario} está OCUPADO (${motivoOcupado})`);
-                    break;
+                    const ocupadoInicio = horarioParaMinutos(horarioExistente);
+                    const ocupadoFim = ocupadoInicio + duracaoExistente;
+                    
+                    // ✅ VERIFICA OVERLAP (sobreposição)
+                    if (inicioMinutos < ocupadoFim && fimMinutos > ocupadoInicio) {
+                        horarioOcupado = true;
+                        motivoOcupado = `conflito com ${horarioExistente} (status: ${status})`;
+                        console.log(`🔴 CONFLITO: ${horario} (${inicioMinutos}-${fimMinutos}) sobrepõe ${horarioExistente} (${ocupadoInicio}-${ocupadoFim})`);
+                        break;
+                    }
                 }
             }
             
@@ -1877,8 +1891,6 @@ if (form) {
         if (!data) { mostrarMensagem("Selecione uma data.", "erro"); return; }
         if (!horario) { mostrarMensagem("Selecione um horário.", "erro"); return; }
         
-        const inicioMinutos = horarioParaMinutos(horario);
-        const fimMinutos = inicioMinutos + duracaoTotal;
         const horarioFim = minutosParaHorario(fimMinutos);
         
         const submitBtn = form.querySelector('button[type="submit"]');
@@ -2103,5 +2115,6 @@ console.log("👨‍👦 MODAL para seleção de múltiplos clientes com mesmo t
 console.log("✅ FILTRO DE HORÁRIOS: Ignora agendamentos com status ausente/cancelado/aguardando_pagamento/pendente!");
 console.log("🔓 HORÁRIOS LIBERADOS: Agendamentos com horarioLiberado=true NÃO bloqueiam mais!");
 console.log("✅ APENAS agendamentos CONFIRMADOS e CONCLUIDOS (pagamento finalizado) ocupam horário!");
+console.log("✅ VERIFICAÇÃO DE OVERLAP: Impede agendamentos que se sobrepõem!");
 console.log("⏳ LISTA DE ESPERA: Funcionalidade integrada com botão e modais!");
 console.log("🔄 Função forcarRecarregamentoHorarios() disponível para debug!");
