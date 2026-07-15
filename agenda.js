@@ -5,6 +5,7 @@
 // CORREÇÃO v2: Removidos botões "Ausente" e "Cancelar" - gestão feita apenas na comanda
 // NOVIDADE: Lista de Espera integrada com notificação automática - SEM ÍNDICES COMPOSTOS
 // CORREÇÃO v3: Sincronização de comandas apenas quando finalizadas
+// CORREÇÃO v4: Função enviarLembreteWhatsApp corrigida com tratamento de erros e permissões
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
@@ -21,7 +22,8 @@ import {
     getDoc,
     setDoc,
     orderBy,
-    deleteDoc
+    deleteDoc,
+    limit
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
     getAuth,
@@ -38,7 +40,7 @@ const firebaseConfig = {
     messagingSenderId: "150077330983",
     appId: "1:150077330983:web:a49838c4cde9df4e1de002",
     measurementId: "G-WX477KDZQC"
-  };
+};
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -252,10 +254,21 @@ Seu agendamento foi confirmado com sucesso!
 _Esta é uma mensagem automática._`;
 }
 
+// ==================== FUNÇÃO ENVIAR LEMBRETE CORRIGIDA ====================
+
 async function enviarLembreteWhatsApp(agendamento, tipo = 'dia') {
     try {
         console.log(`📨 Enviando lembrete ${tipo} para agendamento:`, agendamento.id);
         
+        // ===== VERIFICAÇÃO DE AUTENTICAÇÃO =====
+        const currentUser = auth.currentUser;
+        if (!currentUser) {
+            console.error("❌ Usuário não autenticado!");
+            mostrarToast("Usuário não autenticado. Faça login novamente.", "erro");
+            return { sucesso: false, motivo: "Usuário não autenticado" };
+        }
+        
+        // ===== BUSCAR TELEFONE =====
         let telefone = agendamento.telefone || agendamento.whatsapp || agendamento.celular;
         
         if (!telefone && agendamento.clienteId) {
@@ -283,15 +296,18 @@ async function enviarLembreteWhatsApp(agendamento, tipo = 'dia') {
         
         if (!telefone) {
             console.log(`❌ Telefone não encontrado para agendamento ${agendamento.id}`);
+            mostrarToast("❌ Telefone do cliente não encontrado!", "erro");
             return { sucesso: false, motivo: "Telefone não encontrado" };
         }
         
         const telefoneLimpo = limparTelefone(telefone);
         if (!telefoneLimpo) {
             console.log(`❌ Telefone inválido para agendamento ${agendamento.id}: ${telefone}`);
+            mostrarToast("❌ Telefone inválido!", "erro");
             return { sucesso: false, motivo: "Telefone inválido" };
         }
         
+        // ===== PREPARAR DADOS =====
         const nomeCliente = agendamento.cliente || agendamento.nome || agendamento.clienteNome || 'Cliente';
         const data = formatarData(agendamento.data);
         const horario = formatarHorario(agendamento.horario);
@@ -308,6 +324,7 @@ async function enviarLembreteWhatsApp(agendamento, tipo = 'dia') {
             servicos = [{ nome: agendamento.servicoNome }];
         }
         
+        // ===== GERAR MENSAGEM =====
         let mensagem = '';
         if (tipo === 'vespera') {
             mensagem = gerarMensagemLembrete(nomeCliente, data, horario, profissional, servicos, valorTotal, 'vespera');
@@ -317,33 +334,73 @@ async function enviarLembreteWhatsApp(agendamento, tipo = 'dia') {
             mensagem = gerarMensagemLembrete(nomeCliente, data, horario, profissional, servicos, valorTotal, 'dia');
         }
         
+        // ===== ABRIR WHATSAPP =====
         const url = `https://wa.me/${telefoneLimpo}?text=${encodeURIComponent(mensagem)}`;
         window.open(url, '_blank');
         
-        await addDoc(collection(db, "historico_lembretes"), {
-            agendamentoId: agendamento.id,
-            clienteId: agendamento.clienteId,
-            clienteNome: nomeCliente,
-            tipo: tipo,
-            telefone: telefone,
-            dataAgendamento: agendamento.data,
-            horarioAgendamento: agendamento.horario,
-            enviadoEm: Timestamp.now(),
-            status: "enviado"
-        });
+        // ===== SALVAR NO HISTÓRICO (COM TRY-CATCH) =====
+        try {
+            await addDoc(collection(db, "historico_lembretes"), {
+                agendamentoId: agendamento.id,
+                clienteId: agendamento.clienteId || null,
+                clienteNome: nomeCliente,
+                tipo: tipo,
+                telefone: telefone,
+                dataAgendamento: agendamento.data || null,
+                horarioAgendamento: agendamento.horario || null,
+                enviadoEm: Timestamp.now(),
+                status: "enviado",
+                enviadoPor: currentUser.email || currentUser.uid || "sistema"
+            });
+            console.log("✅ Histórico de lembrete salvo");
+        } catch (historyError) {
+            console.warn("⚠️ Não foi possível salvar histórico:", historyError);
+            // Continua mesmo sem salvar histórico
+        }
         
-        const agendamentoRef = doc(db, "agendamentos", agendamento.id);
-        const campoAtualizar = tipo === 'vespera' ? 'lembreteVesperaEnviado' : (tipo === 'confirmacao' ? 'lembreteConfirmacaoEnviado' : 'lembreteDiaEnviado');
-        await updateDoc(agendamentoRef, {
-            [campoAtualizar]: true,
-            ultimoLembreteEnviado: Timestamp.now()
-        });
+        // ===== ATUALIZAR AGENDAMENTO (COM TRY-CATCH E VERIFICAÇÃO) =====
+        try {
+            const agendamentoRef = doc(db, "agendamentos", agendamento.id);
+            
+            // Verificar se o documento existe
+            const docSnap = await getDoc(agendamentoRef);
+            if (!docSnap.exists()) {
+                console.warn(`⚠️ Agendamento ${agendamento.id} não encontrado para atualizar`);
+                mostrarToast(`✅ Lembrete enviado! (agendamento não encontrado)`, "sucesso");
+                return { sucesso: true, mensagem: "Lembrete enviado, mas agendamento não encontrado" };
+            }
+            
+            // Definir o campo a ser atualizado
+            let campoAtualizar = '';
+            if (tipo === 'vespera') {
+                campoAtualizar = 'lembreteVesperaEnviado';
+            } else if (tipo === 'confirmacao') {
+                campoAtualizar = 'lembreteConfirmacaoEnviado';
+            } else {
+                campoAtualizar = 'lembreteDiaEnviado';
+            }
+            
+            // Criar objeto de atualização
+            const updateData = {
+                [campoAtualizar]: true,
+                ultimoLembreteEnviado: Timestamp.now()
+            };
+            
+            await updateDoc(agendamentoRef, updateData);
+            console.log(`✅ Agendamento ${agendamento.id} atualizado: ${campoAtualizar} = true`);
+            
+        } catch (updateError) {
+            console.warn("⚠️ Não foi possível atualizar o agendamento:", updateError);
+            // Não falha o envio se não conseguir atualizar
+        }
         
         console.log(`✅ Lembrete ${tipo} enviado com sucesso para ${nomeCliente}`);
+        mostrarToast(`✅ Lembrete enviado para ${nomeCliente}!`, "sucesso");
         return { sucesso: true, mensagem: "Lembrete enviado com sucesso!" };
         
     } catch (error) {
         console.error("❌ Erro ao enviar lembrete:", error);
+        mostrarToast(`❌ Erro: ${error.message}`, "erro");
         return { sucesso: false, motivo: error.message };
     }
 }
@@ -1893,6 +1950,7 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log("ℹ️ Botões 'Ausente' e 'Cancelar' removidos - gestão apenas na comanda");
     console.log("⏳ LISTA DE ESPERA integrada - SEM ÍNDICES COMPOSTOS!");
     console.log("🔒 CORREÇÃO v3: Sincronização de comandas apenas quando finalizadas");
+    console.log("🔧 CORREÇÃO v4: Função enviarLembreteWhatsApp corrigida com tratamento de erros");
     
     if (dataInicio) dataInicio.value = '';
     if (dataFim) dataFim.value = '';
@@ -1941,3 +1999,4 @@ if (logoutBtn) logoutBtn.onclick = async () => { await signOut(auth); window.loc
 console.log("✅ Agenda.js carregado - Layout horizontal em tabela com dia da semana corrigido!");
 console.log("✅ Lista de Espera integrada com notificação automática - SEM ÍNDICES COMPOSTOS!");
 console.log("✅ CORREÇÃO: Comandas só sincronizam com agenda quando finalizadas!");
+console.log("✅ CORREÇÃO: Função enviarLembreteWhatsApp com tratamento de erros e permissões!");
