@@ -1,6 +1,7 @@
-// bloqueios.js - CORREÇÃO DE DATAS (TIMEZONE LOCAL) - VERSÃO COMPLETA
+// bloqueios.js - CORREÇÃO DE DATAS (TIMEZONE LOCAL) - VERSÃO COMPLETA COM EDIÇÃO
 // CORREÇÃO: Apenas agendamentos CONFIRMADOS ocupam horário
 // CORREÇÃO: Agendamentos com horarioLiberado=true NÃO bloqueiam
+// NOVO: Funcionalidade de EDIÇÃO de bloqueios
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
@@ -8,6 +9,7 @@ import {
     collection,
     addDoc,
     deleteDoc,
+    updateDoc,
     doc,
     onSnapshot,
     query,
@@ -79,6 +81,7 @@ const elementosDOM = {
 };
 
 let bloqueioParaExcluir = null;
+let bloqueioEditando = null; // Armazena o ID do bloqueio em edição
 
 function mostrarToast(mensagem, tipo = 'sucesso') {
     if (!elementosDOM.toast) return;
@@ -486,7 +489,7 @@ function abreviarStatus(status) {
     return statusMap[status] || status;
 }
 
-// ========== RENDERIZAÇÃO DOS BLOQUEIOS ==========
+// ========== RENDERIZAÇÃO DOS BLOQUEIOS COM EDIÇÃO ==========
 
 function renderizarBloqueios() {
     if (!elementosDOM.bloqueiosList) return;
@@ -533,12 +536,26 @@ function renderizarBloqueios() {
                     <p class="motivo"><i class="fa-solid fa-circle-info"></i> ${escapeHtml(bloqueio.motivo || 'Sem motivo informado')}</p>
                 </div>
                 <div class="bloqueio-actions">
-                    <button class="btn-icon btn-delete" data-id="${bloqueio.id}" data-titulo="${escapeHtml(bloqueio.titulo)}"><i class="fa-regular fa-trash-can"></i> Excluir</button>
+                    <button class="btn-icon btn-edit" data-id="${bloqueio.id}">
+                        <i class="fa-solid fa-pen"></i> Editar
+                    </button>
+                    <button class="btn-icon btn-delete" data-id="${bloqueio.id}" data-titulo="${escapeHtml(bloqueio.titulo)}">
+                        <i class="fa-regular fa-trash-can"></i> Excluir
+                    </button>
                 </div>
             </div>
         `;
     }).join('');
     
+    // Event listeners para botões de editar
+    document.querySelectorAll('.btn-edit').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = btn.getAttribute('data-id');
+            abrirModalEditarBloqueio(id);
+        });
+    });
+    
+    // Event listeners para botões de excluir
     document.querySelectorAll('.btn-delete').forEach(btn => {
         btn.addEventListener('click', () => {
             const id = btn.getAttribute('data-id');
@@ -940,8 +957,13 @@ function mudarVisualizacao() {
 // ========== FUNÇÕES DE BLOQUEIO (MODAL) ==========
 
 function abrirModalNovoBloqueio() {
+    bloqueioEditando = null;
     if (elementosDOM.modalTitle) elementosDOM.modalTitle.innerHTML = '<i class="fa-solid fa-plus"></i> Novo Bloqueio';
-    if (elementosDOM.formBloqueio) elementosDOM.formBloqueio.reset();
+    if (elementosDOM.formBloqueio) {
+        elementosDOM.formBloqueio.reset();
+        // Limpar horários selecionados
+        document.querySelectorAll('#bloqueioHorarios input[name="horarios"]').forEach(cb => cb.checked = false);
+    }
     
     const hoje = new Date();
     const ano = hoje.getFullYear();
@@ -961,9 +983,77 @@ function abrirModalNovoBloqueio() {
     if (dataInicio) dataInicio.value = hojeStr;
     if (dataFim) dataFim.value = amanhaStr;
     
+    // Remover ID de edição do formulário
+    const form = elementosDOM.formBloqueio;
+    if (form) {
+        const idInput = form.querySelector('input[name="bloqueioId"]');
+        if (idInput) idInput.remove();
+    }
+    
     if (elementosDOM.modalBloqueio) elementosDOM.modalBloqueio.classList.add('active');
 }
 
+// ========== NOVA FUNÇÃO: abrirModalEditarBloqueio ==========
+function abrirModalEditarBloqueio(id) {
+    const bloqueio = bloqueios.find(b => b.id === id);
+    if (!bloqueio) {
+        mostrarToast("Bloqueio não encontrado", "erro");
+        return;
+    }
+    
+    bloqueioEditando = id;
+    if (elementosDOM.modalTitle) elementosDOM.modalTitle.innerHTML = '<i class="fa-solid fa-pen"></i> Editar Bloqueio';
+    
+    // Preencher campos
+    const tituloInput = document.getElementById('bloqueioTitulo');
+    const motivoInput = document.getElementById('bloqueioMotivo');
+    const dataInicioInput = document.getElementById('bloqueioDataInicio');
+    const dataFimInput = document.getElementById('bloqueioDataFim');
+    
+    if (tituloInput) tituloInput.value = bloqueio.titulo || '';
+    if (motivoInput) motivoInput.value = bloqueio.motivo || '';
+    
+    // Formatar datas para input type="date"
+    if (dataInicioInput && bloqueio.dataInicio) {
+        const dataObj = converterParaDateLocal(bloqueio.dataInicio);
+        if (dataObj && !isNaN(dataObj.getTime())) {
+            const ano = dataObj.getFullYear();
+            const mes = String(dataObj.getMonth() + 1).padStart(2, '0');
+            const dia = String(dataObj.getDate()).padStart(2, '0');
+            dataInicioInput.value = `${ano}-${mes}-${dia}`;
+        }
+    }
+    
+    if (dataFimInput && bloqueio.dataFim) {
+        const dataObj = converterParaDateLocal(bloqueio.dataFim);
+        if (dataObj && !isNaN(dataObj.getTime())) {
+            const ano = dataObj.getFullYear();
+            const mes = String(dataObj.getMonth() + 1).padStart(2, '0');
+            const dia = String(dataObj.getDate()).padStart(2, '0');
+            dataFimInput.value = `${ano}-${mes}-${dia}`;
+        }
+    }
+    
+    // Marcar horários selecionados
+    document.querySelectorAll('#bloqueioHorarios input[name="horarios"]').forEach(cb => {
+        cb.checked = bloqueio.horarios && bloqueio.horarios.includes(cb.value);
+    });
+    
+    // Adicionar input oculto com o ID do bloqueio
+    const form = elementosDOM.formBloqueio;
+    let idInput = form.querySelector('input[name="bloqueioId"]');
+    if (!idInput) {
+        idInput = document.createElement('input');
+        idInput.type = 'hidden';
+        idInput.name = 'bloqueioId';
+        form.appendChild(idInput);
+    }
+    idInput.value = id;
+    
+    if (elementosDOM.modalBloqueio) elementosDOM.modalBloqueio.classList.add('active');
+}
+
+// ========== FUNÇÃO SALVAR BLOQUEIO ATUALIZADA ==========
 async function salvarBloqueio(event) {
     event.preventDefault();
     
@@ -972,6 +1062,11 @@ async function salvarBloqueio(event) {
     const dataInicioStr = document.getElementById('bloqueioDataInicio')?.value;
     const dataFimStr = document.getElementById('bloqueioDataFim')?.value;
     const horariosSelecionados = Array.from(document.querySelectorAll('#bloqueioHorarios input[name="horarios"]:checked')).map(cb => cb.value);
+    
+    // Verificar se é edição
+    const form = elementosDOM.formBloqueio;
+    const idInput = form.querySelector('input[name="bloqueioId"]');
+    const isEdit = idInput && idInput.value;
     
     if (!titulo || !dataInicioStr || !dataFimStr) {
         mostrarToast("Preencha todos os campos obrigatórios", "erro");
@@ -990,17 +1085,29 @@ async function salvarBloqueio(event) {
     }
     
     try {
-        await addDoc(collection(db, "bloqueios"), {
+        const dadosBloqueio = {
             titulo: titulo,
             motivo: motivo || '',
             dataInicio: Timestamp.fromDate(dataInicio),
             dataFim: Timestamp.fromDate(dataFim),
             horarios: horariosSelecionados,
             tipo: horariosSelecionados.length > 0 ? "horario" : "periodo",
-            ativo: true,
-            createdAt: Timestamp.now()
-        });
-        mostrarToast("Bloqueio criado com sucesso!");
+            ativo: true
+        };
+        
+        if (isEdit) {
+            // ATUALIZAR bloqueio existente
+            await updateDoc(doc(db, "bloqueios", idInput.value), dadosBloqueio);
+            mostrarToast("Bloqueio atualizado com sucesso!");
+        } else {
+            // CRIAR novo bloqueio
+            await addDoc(collection(db, "bloqueios"), {
+                ...dadosBloqueio,
+                createdAt: Timestamp.now()
+            });
+            mostrarToast("Bloqueio criado com sucesso!");
+        }
+        
         fecharModalBloqueio();
     } catch (error) {
         console.error("Erro ao salvar bloqueio:", error);
@@ -1030,6 +1137,13 @@ async function deletarBloqueio() {
 
 function fecharModalBloqueio() {
     if (elementosDOM.modalBloqueio) elementosDOM.modalBloqueio.classList.remove('active');
+    bloqueioEditando = null;
+    // Remover input oculto
+    const form = elementosDOM.formBloqueio;
+    if (form) {
+        const idInput = form.querySelector('input[name="bloqueioId"]');
+        if (idInput) idInput.remove();
+    }
 }
 
 function fecharModalExcluirBloqueio() {

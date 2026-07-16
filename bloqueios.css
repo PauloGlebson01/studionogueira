@@ -411,13 +411,27 @@ textarea {
 }
 
 .btn-icon {
-    padding: 8px 12px;
+    padding: 8px 14px;
     border: none;
     border-radius: 10px;
     cursor: pointer;
     font-size: 0.75rem;
     font-weight: 500;
     transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.btn-edit {
+    background: rgba(33, 153, 239, 0.1);
+    color: var(--primary);
+}
+
+.btn-edit:hover {
+    background: rgba(33, 153, 239, 0.25);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(33, 153, 239, 0.2);
 }
 
 .btn-delete {
@@ -426,7 +440,9 @@ textarea {
 }
 
 .btn-delete:hover {
-    background: rgba(239, 68, 68, 0.2);
+    background: rgba(239, 68, 68, 0.25);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.2);
 }
 
 .empty-state {
